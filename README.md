@@ -22,6 +22,8 @@ All vision runs **on your device**. The camera stream is not uploaded; MediaPipe
 
 On macOS, turn off **Portrait** and **Background** in the camera menu—they break hand tracking.
 
+**Arc stuck on an old build?** Fully quit Arc (Cmd+Q), reopen the demo URL, or open it in a **New Incognito Window**. Site data: lock icon → site settings → clear data, or `arc://settings/content/siteDetails?site=https%3A%2F%2FilliaGoncharov.github.io`. Camera: `arc://settings/content/camera` → allow `illiaGoncharov.github.io`.
+
 ## Stack
 
 Vanilla JS · Canvas 2D · [MediaPipe Tasks Vision](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker) · culori · d3-delaunay · static hosting on GitHub Pages

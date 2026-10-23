@@ -37,6 +37,24 @@ const LANDMARKER_OPTS = {
   minTrackingConfidence: 0.4,
 };
 
+async function openCameraStream() {
+  const attempts = [
+    { video: { width: 1280, height: 720, facingMode: "user" } },
+    { video: { facingMode: "user" } },
+    { video: true },
+  ];
+  let last;
+  for (const constraints of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      last = err;
+      if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") throw err;
+    }
+  }
+  throw last || new Error("Could not open camera");
+}
+
 async function createLandmarker(vision) {
   try {
     return await HandLandmarker.createFromOptions(vision, {
@@ -57,9 +75,7 @@ export async function startHands(video, { toScene, onClose, onOpen, onStatus }) 
     throw new Error("Camera needs HTTPS or localhost");
   }
   status("camera: allow in browser prompt…");
-  video.srcObject = await navigator.mediaDevices.getUserMedia({
-    video: { width: 1280, height: 720, facingMode: "user" },
-  });
+  video.srcObject = await openCameraStream();
   await video.play();
 
   status("camera: loading hand model…");
