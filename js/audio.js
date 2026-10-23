@@ -1,11 +1,14 @@
 /**
- * Генеративный эмбиент: сухие импульсы (Alva Noto) + длинные ноты (Sakamoto).
- * Запуск только после жеста пользователя (Tone.start).
+ * Генеративный эмбиент в духе серии Noto × Sakamoto
+ * (Vrioon / Insen / Revep / Summvs): сухие клики + длинные тихие ноты.
+ * Tone.js — UMD (vendor/Tone.js) → globalThis.Tone.
  */
-import * as Tone from "../vendor/tone/index.js";
+const Tone = globalThis.Tone;
+if (!Tone) throw new Error("Load vendor/Tone.js before audio.js");
 
-const SCALE = ["D3", "F3", "A3", "C4", "D4", "F4", "A4", "C5"];
-const MASTER_DB = -20;
+/** Минорная пентатоника в D — спокойнее мажора, ближе к Insen */
+const SCALE = ["D3", "F3", "G3", "A3", "C4", "D4", "F4", "G4", "A4"];
+const MASTER_DB = -10;
 
 let ready = false;
 let muted = false;
@@ -13,9 +16,17 @@ let master;
 let reverb;
 let drone;
 let droneFilter;
-let clickSynth;
+let pad;
+let idleTick;   // редкий фоновый «ното»-тик — не тот же, что при релизе
+let burstPool;  // по одному NoiseSynth на удар в россыпи (Tone: время на ноде только вперёд)
+let burstSynthNext = [];
+let burstTimeline = 0;
 let pingSynth;
 let chordSynth;
+let idleLoop;
+/** До этого времени idle не стучит — чтобы не наслаиваться на жест */
+let idleQuietUntil = 0;
+let lastBurstAudioAt = -1;
 
 function hueToNote(hue) {
   const i = Math.floor(((hue % 360) / 360) * SCALE.length) % SCALE.length;
@@ -27,44 +38,77 @@ export async function startAudio() {
   await Tone.start();
 
   master = new Tone.Volume(MASTER_DB).toDestination();
-  reverb = new Tone.Reverb({ decay: 9, wet: 0.42 }).connect(master);
+  reverb = new Tone.Reverb({ decay: 11, wet: 0.38 }).connect(master);
   await reverb.generate();
 
-  droneFilter = new Tone.Filter(280, "lowpass").connect(reverb);
+  // Низкий гул (Vrioon-слой)
+  droneFilter = new Tone.Filter(220, "lowpass").connect(reverb);
   drone = new Tone.FMSynth({
-    harmonicity: 1.01,
-    modulationIndex: 0.8,
+    harmonicity: 1.02,
+    modulationIndex: 0.6,
     oscillator: { type: "sine" },
-    envelope: { attack: 3, decay: 0.2, sustain: 0.35, release: 8 },
-    modulationEnvelope: { attack: 2, decay: 0, sustain: 1, release: 6 },
+    envelope: { attack: 4, decay: 0.2, sustain: 0.55, release: 10 },
+    modulationEnvelope: { attack: 3, decay: 0, sustain: 1, release: 8 },
   }).connect(droneFilter);
-  drone.volume.value = -22;
+  drone.volume.value = -14;
 
-  clickSynth = new Tone.MembraneSynth({
-    pitchDecay: 0.008,
-    octaves: 1.2,
-    envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.04 },
+  // Длинный «сакамото»-пад
+  pad = new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 3,
+    oscillator: { type: "sine" },
+    envelope: { attack: 2.5, decay: 1, sustain: 0.4, release: 6 },
   }).connect(reverb);
-  clickSynth.volume.value = -28;
+  pad.volume.value = -18;
+
+  // Фоновый тик: тише, розовый шум, длиннее хвост — «далеко в комнате»
+  idleTick = new Tone.NoiseSynth({
+    noise: { type: "pink" },
+    envelope: { attack: 0.001, decay: 0.08, sustain: 0, release: 0.04 },
+  }).connect(reverb);
+  idleTick.volume.value = -28;
+
+  burstPool = Array.from({ length: 12 }, () => {
+    const s = new Tone.NoiseSynth({
+      noise: { type: "white" },
+      envelope: { attack: 0.001, decay: 0.028, sustain: 0, release: 0.012 },
+    }).connect(reverb);
+    s.volume.value = -14;
+    return s;
+  });
+  burstSynthNext = burstPool.map(() => 0);
+  burstTimeline = 0;
 
   pingSynth = new Tone.Synth({
-    oscillator: { type: "sine" },
-    envelope: { attack: 0.02, decay: 0.35, sustain: 0, release: 0.6 },
+    oscillator: { type: "triangle" },
+    envelope: { attack: 0.01, decay: 0.5, sustain: 0, release: 0.8 },
   }).connect(reverb);
-  pingSynth.volume.value = -32;
+  pingSynth.volume.value = -20;
 
   chordSynth = new Tone.PolySynth(Tone.FMSynth, {
     maxPolyphony: 4,
-    volume: -24,
-    options: {
-      harmonicity: 0.5,
-      modulationIndex: 1.2,
-      oscillator: { type: "triangle" },
-      envelope: { attack: 0.8, decay: 0.3, sustain: 0.45, release: 5 },
-    },
+    harmonicity: 0.5,
+    modulationIndex: 1.1,
+    oscillator: { type: "triangle" },
+    envelope: { attack: 0.9, decay: 0.4, sustain: 0.4, release: 5 },
   }).connect(reverb);
+  chordSynth.volume.value = -16;
 
   drone.triggerAttack("D2");
+  // Мягкий стартовый аккорд — сразу слышно, что звук живой
+  pad.triggerAttackRelease(["D3", "A3", "F4"], "2n", Tone.now() + 0.05, 0.25);
+
+  // Idle редко: раз в ~4 такта, шанс ~30%, и пауза после жеста
+  idleLoop = new Tone.Loop(time => {
+    if (muted || time < idleQuietUntil) return;
+    if (Math.random() < 0.3) {
+      idleTick.triggerAttackRelease("32n", time, 0.2 + Math.random() * 0.25);
+    } else if (Math.random() < 0.12) {
+      const note = SCALE[(Math.random() * SCALE.length) | 0];
+      pingSynth.triggerAttackRelease(note, "8n", time, 0.1);
+    }
+  }, "4m").start(0);
+  Tone.Transport.start();
+
   ready = true;
 }
 
@@ -86,38 +130,60 @@ export function isMuted() {
 export function updateAmbient({ nearCount = 0, handYNorm = 0.5 } = {}) {
   if (!ready || muted) return;
   const density = Math.min(1, nearCount / 8);
-  droneFilter.frequency.rampTo(180 + density * 420 + (1 - handYNorm) * 120, 0.15);
-  drone.volume.rampTo(-26 + density * 6, 0.2);
+  droneFilter.frequency.rampTo(160 + density * 380 + (1 - handYNorm) * 100, 0.2);
+  drone.volume.rampTo(-16 + density * 5, 0.25);
 }
 
 /** Цвет слова → редкий «пинг» */
 export function pingFromHue(hue) {
   if (!ready || muted) return;
-  if (Math.random() > 0.08) return;
-  pingSynth.triggerAttackRelease(hueToNote(hue), "8n", Tone.now(), 0.15);
+  if (Math.random() > 0.12) return;
+  pingSynth.triggerAttackRelease(hueToNote(hue), "8n", Tone.now(), 0.18);
 }
 
 /** Кулак: три ноты «сложилось» */
 export function playChord(hues = []) {
   if (!ready || muted || !hues.length) return;
+  const now = Tone.now();
+  idleQuietUntil = now + 2.5;
   const notes = hues.slice(0, 3).map(h => hueToNote(h));
-  chordSynth.triggerAttackRelease(notes, "2n", Tone.now(), 0.35);
+  chordSynth.triggerAttackRelease(notes, "2n", now, 0.4);
 }
 
-/** Раскрытие: сухой клик + reverb swell */
+/** Раскрытие: россыпь ударов (как смыслы разлетаются) + reverb swell */
 export function playBurst() {
   if (!ready || muted) return;
-  clickSynth.triggerAttackRelease("C2", "32n", Tone.now(), 0.4);
-  reverb.wet.rampTo(0.55, 0.08);
-  reverb.wet.rampTo(0.42, 1.2);
+  const now = Tone.now();
+  if (lastBurstAudioAt >= 0 && now - lastBurstAudioAt < 0.42) return;
+  lastBurstAudioAt = now;
+  idleQuietUntil = now + 3.2;
+  const hits = 8 + ((Math.random() * 4) | 0); // 8–11
+  const t0 = Math.max(now + 0.02, burstTimeline + 0.02);
+  for (let i = 0; i < hits; i++) {
+    const si = i % burstPool.length;
+    const synth = burstPool[si];
+    const t = Math.max(t0 + i * 0.026 + Math.random() * 0.006, burstSynthNext[si] + 0.001);
+    burstSynthNext[si] = t + 0.045;
+    const vel = 0.35 + Math.random() * 0.55;
+    synth.triggerAttackRelease("32n", t, vel);
+  }
+  burstTimeline = t0 + hits * 0.026 + 0.08;
+  reverb.wet.cancelScheduledValues(now);
+  reverb.wet.rampTo(0.58, 0.06);
+  reverb.wet.rampTo(0.38, 1.5);
 }
 
 export function disposeAudio() {
   if (!ready) return;
+  idleLoop?.stop();
+  idleLoop?.dispose();
+  Tone.Transport.stop();
   drone?.triggerRelease();
   drone?.dispose();
   droneFilter?.dispose();
-  clickSynth?.dispose();
+  pad?.dispose();
+  idleTick?.dispose();
+  burstPool?.forEach(s => s.dispose());
   pingSynth?.dispose();
   chordSynth?.dispose();
   reverb?.dispose();

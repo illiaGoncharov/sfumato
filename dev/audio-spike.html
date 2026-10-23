@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>sfumato · audio spike</title>
+<script src="../vendor/Tone.js"></script>
 <style>
   body {
     margin: 0;
@@ -36,13 +37,13 @@
 <body>
 <div class="card">
   <h1 style="font-weight:400;font-style:italic;margin:0 0 8px">audio spike</h1>
-  <p>60s ambient: Noto clicks + Sakamoto-style pads. Headphones recommended.</p>
+  <p>60s ambient in the spirit of Noto × Sakamoto (Vrioon–Summvs). Headphones recommended.</p>
   <button id="go">Start listening</button>
   <p id="status"></p>
 </div>
 <script type="module">
-import * as Tone from "../vendor/tone/index.js";
-import { startAudio, playBurst, playChord, updateAmbient, pingFromHue } from "../js/audio.js";
+import { startAudio, playBurst, playChord, updateAmbient, pingFromHue } from "../js/audio.js?v=7";
+const Tone = globalThis.Tone;
 
 const SCALE_HUES = [30, 80, 150, 200, 260, 310];
 let t0 = 0;

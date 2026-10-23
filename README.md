@@ -14,7 +14,7 @@ All vision runs **on your device**. The camera stream is not uploaded; MediaPipe
 
 ## Sound
 
-Generative ambient built with [Tone.js](https://tonejs.github.io/) (MIT): sparse pulses in the spirit of Alva Noto, slow harmonized tones closer to Ryuichi Sakamoto. Hand density and height modulate a quiet drone; a fist-held line triggers a soft chord; release adds a dry click and reverb swell. **Start** on the intro screen unlocks audio; **M** mutes.
+Generative ambient built with [Tone.js](https://tonejs.github.io/) (MIT), in the spirit of the Alva Noto × Ryuichi Sakamoto Raster-Noton series (*Vrioon*, *Insen*, *Revep*, *Summvs*): sparse dry clicks, long quiet tones, lots of space. Hand density and height modulate a low drone; a fist-held line triggers a soft chord; release adds a click and reverb swell. **Start** unlocks audio; **M** mutes.
 
 Tune the palette separately: open [`dev/audio-spike.html`](dev/audio-spike.html) locally.
 

@@ -7,8 +7,10 @@ const MODEL_URL = new URL("vendor/hand_landmarker.task", ASSET_ROOT).href;
 
 const PALM = [0, 5, 9, 13, 17];        // запястье и основания пальцев: центр ладони
 const FIST = 1.35;                     // кулак: средний вылет кончиков / размер ладони ниже этого
-const OPEN = 1.65;                     // ладонь: выше этого
+const OPEN = 1.68;                     // ладонь: выше этого (чуть шире зазор — меньше двойного onOpen)
+const OPEN_HOLD_MS = 320;              // после раскрытия не считать снова кулак/открытие
 const LOST_MS = 500;                   // рука (особенно кулак) может выпасть из кадра: состояние не сбрасываем сразу
+const DETECT_MS = 48;                  // ~20 fps: detectForVideo на main thread — главный источник фризов
 const MATCH_PX = 300;                  // дальше этого рука считается новой, а не прежней
 const MIN_CUTOFF = 1.5;                // One Euro: меньше = плавнее в покое
 const BETA = 0.015;                    // One Euro: больше = меньше лага при быстром движении
@@ -85,10 +87,11 @@ export async function startHands(video, { toScene, onClose, onOpen, onStatus }) 
 
   // По одному указателю на руку: невидимый круг в центре ладони. Тянет слова, пока рука открыта
   const pointers = Array.from({ length: 2 }, (_, i) => ({
-    id: `hand${i}`, hand: true, pull: true, closed: false, x: 0, y: 0, radius: 230, active: false, fade: 0, seen: false, lastSeen: -Infinity, ratio: 0,
+    id: `hand${i}`, hand: true, pull: true, closed: false, x: 0, y: 0, radius: 230, active: false, fade: 0, seen: false, lastSeen: -Infinity, ratio: 0, gestureUntil: 0,
     fx: new OneEuro(), fy: new OneEuro(),
   }));
   let lastTime = -1;
+  let lastDetectAt = 0;
 
   function apply(hands, now) {
     const vw = video.videoWidth, vh = video.videoHeight;
@@ -125,8 +128,18 @@ export async function startHands(video, { toScene, onClose, onOpen, onStatus }) 
       // Открыта или сжата (с гистерезисом, чтобы не дребезжало)
       const size = dist(lm[0], lm[9]);
       p.ratio = [8, 12, 16, 20].reduce((s, i) => s + dist(lm[0], lm[i]), 0) / 4 / size;
-      if (!p.closed && p.ratio < FIST) { p.closed = true; p.pull = false; onClose(p); }
-      else if (p.closed && p.ratio > OPEN) { p.closed = false; p.pull = true; onOpen(p); }
+      if (now < p.gestureUntil) return;
+      if (!p.closed && p.ratio < FIST) {
+        p.closed = true;
+        p.pull = false;
+        p.gestureUntil = now + OPEN_HOLD_MS;
+        onClose(p);
+      } else if (p.closed && p.ratio > OPEN) {
+        p.closed = false;
+        p.pull = true;
+        p.gestureUntil = now + OPEN_HOLD_MS;
+        onOpen(p);
+      }
     });
   }
 
@@ -136,8 +149,14 @@ export async function startHands(video, { toScene, onClose, onOpen, onStatus }) 
       return "hands " + pointers.map(p => (p.seen ? p.ratio.toFixed(2) + (p.closed ? " fist" : "") : "—")).join(" | ");
     },
     update(now) {
-      if (video.readyState >= 2 && video.currentTime !== lastTime) {
+      if (
+        !document.hidden
+        && video.readyState >= 2
+        && video.currentTime !== lastTime
+        && now - lastDetectAt >= DETECT_MS
+      ) {
         lastTime = video.currentTime;
+        lastDetectAt = now;
         apply(landmarker.detectForVideo(video, now).landmarks, now);
       }
       // плавное появление и затухание указателей; рука пропала надолго: сбрасываем состояние

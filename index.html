@@ -349,6 +349,7 @@
     color: var(--text);
   }
 </style>
+<script src="./vendor/Tone.js"></script>
 <script src="./vendor/d3-delaunay.min.js"></script>
 </head>
 <body>
@@ -364,7 +365,7 @@
       <li>Generative ambient sound (headphones welcome). Press <strong>M</strong> to mute.</li>
       <li>Add your own sensations with <strong>N</strong> or restore them via optional cloud sync.</li>
     </ul>
-    <button class="badge-btn" id="btnStart" type="button">Start</button>
+    <button class="badge-btn" id="btnStart" type="button">Start [Enter]</button>
   </div>
 </div>
 
@@ -433,8 +434,8 @@
 
 <script type="module">
 import { oklch, formatRgb } from "./vendor/culori.min.mjs";
-import { startHands } from "./js/hands.js?v=7";
-import { startAudio, setMuted, isMuted, updateAmbient, playChord, playBurst } from "./js/audio.js?v=2";
+import { startHands } from "./js/hands.js?v=9";
+import { startAudio, setMuted, isMuted, updateAmbient, playChord, playBurst } from "./js/audio.js?v=9";
 import {
   initWordsStore, loadLibraryRaw, replaceLibraryRaw, addWord, deleteWordAt,
   parseWords, isCloudEnabled, linkEmail,
@@ -690,6 +691,7 @@ class WordNode {
   }
 
   drawGlow(ctx) {
+    if (perfLite && this.level === 3 && this.focusFactor < 0.12) return;
     // Мягкое свечение-пятно (режим screen/source-over с низкой альфой)
     const radius = 24 + this.focusFactor * 32;
     const alpha = 0.06 + this.focusFactor * 0.1;
@@ -794,7 +796,7 @@ function rebuildWords(rawText) {
   libraryRaw = rawText;
   const parsed = parseWords(rawText);
   words = parsed.map((item, idx) => new WordNode(item.category, item.detail, idx, parsed.length));
-  refreshWordList();
+  if (wordList) refreshWordList();
 }
 
 async function persistWords(rawText) {
@@ -840,8 +842,11 @@ function separate(nodes) {
 // -------------------------------------------------------------
 // Созвездия Delaunay между близкими активными узлами
 // -------------------------------------------------------------
+let constellationSkip = 0;
+
 function drawConstellations(ctx, activeNodes, active) {
   if (activeNodes.length < 2) return;
+  if (perfLite && (constellationSkip++ & 1)) return;
 
   // Точки для триангуляции: активные указатели + слова рядом с ними
   const points = active.map(p => [p.x, p.y]);
@@ -916,13 +921,22 @@ function grab(p, now) {
   if (near.length) playChord(near.map(w => w.hue));
 }
 
-// Раскрытие: держимые слова отпускаются и взрываются вместе со всеми
+const RELEASE_COOLDOWN_MS = 380;
+
+// Раскрытие: только если была строка в кулаке; иначе onOpen дребезжит и дёргает всю сцену
 function release(p, now) {
-  const held = holds.get(p)?.words ?? [];
+  const h = holds.get(p);
+  if (!h) return;
   holds.delete(p);
-  for (const w of held) { w.slot = null; w.freeUntil = now + BURST_FREE_MS; }
-  burst(p.x, p.y, held);
+  for (const w of h.words) { w.slot = null; w.freeUntil = now + BURST_FREE_MS; }
+  if (p.lastBurst && now - p.lastBurst < RELEASE_COOLDOWN_MS) return;
+  p.lastBurst = now;
+  burst(p.x, p.y, h.words);
   playBurst();
+}
+
+function releaseFromGesture(p) {
+  release(p, performance.now());
 }
 
 // Строка висит над кулаком и следует за рукой
@@ -971,9 +985,10 @@ function drawGrain(alpha) {
 let pulse = null; // кольцо-вспышка
 function burst(x, y, held = []) {
   const now = performance.now();
+  const heldSet = new Set(held);
   for (const w of words) {
     const angle = Math.atan2(w.y - y, w.x - x) + (Math.random() - 0.5) * 1.2;
-    const power = BURST * (0.6 + Math.random() * 0.8) / (1 + Math.hypot(w.x - x, w.y - y) / 500) * (held.includes(w) ? 1.8 : 1);
+    const power = BURST * (0.6 + Math.random() * 0.8) / (1 + Math.hypot(w.x - x, w.y - y) / 500) * (heldSet.has(w) ? 1.8 : 1);
     w.vx += Math.cos(angle) * power;
     w.vy += Math.sin(angle) * power;
     w.freeUntil = now + BURST_FREE_MS * (0.7 + Math.random() * 0.6);
@@ -1066,7 +1081,7 @@ async function startCamera() {
     hands = await startHands(video, {
       toScene,
       onClose: p => grab(p, performance.now()),
-      onOpen: p => release(p, performance.now()),
+      onOpen: p => releaseFromGesture(p),
       onStatus: s => { camStatus = s; updateHud(); },
     });
     small.width = trail.width = 128;
@@ -1094,7 +1109,23 @@ async function startCamera() {
 // Отладочная сетка 3:4 (безопасная зона для сетки профиля Instagram)
 let showDebug = false;
 
+async function dismissIntro() {
+  const el = document.getElementById("intro");
+  if (el.classList.contains("hidden")) return;
+  try {
+    await startAudio();
+  } catch (err) {
+    console.warn("audio start failed", err);
+  }
+  el.classList.add("hidden");
+}
+
 window.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !document.getElementById("intro").classList.contains("hidden")) {
+    e.preventDefault();
+    dismissIntro();
+    return;
+  }
   if (e.key === "Escape") {
     if (addPanel.classList.contains("open")) { toggleAddPanel(false); return; }
     if (modal.classList.contains("open")) { closeModal(); return; }
@@ -1126,11 +1157,14 @@ window.addEventListener("keydown", e => {
 let lastTime = performance.now();
 let frameCount = 0;
 let currentFps = 60;
+let perfLite = false;
+let trailFrame = 0;
 
 function render(now) {
   frameCount++;
   if (now - lastTime >= 1000) {
     currentFps = frameCount;
+    perfLite = currentFps > 0 && currentFps < 28;
     frameCount = 0;
     lastTime = now;
   }
@@ -1149,7 +1183,8 @@ function render(now) {
   // 0. Фон: размытая и притемнённая камера
   if (hands) {
     smallCtx.drawImage(video, 0, 0, small.width, small.height);
-    blendTrail(now);
+    // getImageData/putImageData — тяжёлый CPU-путь; в lite — через кадр
+    if (!perfLite || (trailFrame++ & 1) === 0) blendTrail(now);
     drawCover(ctx, trail, trail.width, trail.height);
     drawGrain(VIDEO_GRAIN);
     ctx.fillStyle = `rgba(8, 9, 13, ${VIDEO_DIM})`;
@@ -1161,7 +1196,7 @@ function render(now) {
   for (const w of words) {
     w.update(pullers, now);
   }
-  separate(words);
+  if (!perfLite || (frameCount & 1) === 0) separate(words);
   [...words].sort((a, b) => a.dist - b.dist).forEach((w, i) => { w.rank = i; });
   layoutHolds(now);
 
@@ -1172,8 +1207,12 @@ function render(now) {
   }
 
   // 2. Слой созвездий (Delaunay) между указателями и словами рядом
-  const activeNodes = words.filter(w => w.dist < 220);
-  drawConstellations(ctx, activeNodes, pullers);
+  let activeNodes = words.filter(w => w.dist < 220);
+  if (activeNodes.length > 22) {
+    activeNodes.sort((a, b) => a.dist - b.dist);
+    activeNodes = activeNodes.slice(0, 22);
+  }
+  if (!perfLite || (frameCount & 3) === 0) drawConstellations(ctx, activeNodes, pullers);
 
   // 3. Свечение слов (мягкие пятна-лучи)
   ctx.globalCompositeOperation = "screen";
@@ -1191,14 +1230,18 @@ function render(now) {
   for (const h of holds.values()) {
     if (!h.row) continue;
     const { x0, x1, y, alpha } = h.row, cx = (x0 + x1) / 2;
+    const r = Math.max((x1 - x0) * 0.65, 90);
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.globalCompositeOperation = "screen";
-    const glow = ctx.createRadialGradient(cx, y, 0, cx, y, (x1 - x0) * 0.6);
-    glow.addColorStop(0, `rgba(${INK}, 0.12)`);
-    glow.addColorStop(1, `rgba(${INK}, 0)`);
+    const glow = ctx.createRadialGradient(cx, y, 0, cx, y, r);
+    glow.addColorStop(0, `rgba(${INK}, 0.14)`);
+    glow.addColorStop(0.55, `rgba(${INK}, 0.04)`);
+    glow.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.beginPath();
+    ctx.arc(cx, y, r, 0, Math.PI * 2);
+    ctx.fill();
     ctx.globalCompositeOperation = "source-over";
     ctx.strokeStyle = `rgba(${INK}, 0.35)`;
     ctx.beginPath();
@@ -1278,7 +1321,7 @@ function drawSafeGrid(ctx) {
 }
 
 function updateHud() {
-  hudStatus.textContent = `fps ${currentFps} · words ${words.length} · ${hands ? hands.info : camStatus}${isMuted() ? " · muted" : ""}`;
+  hudStatus.textContent = `fps ${currentFps}${perfLite ? " lite" : ""} · words ${words.length} · ${hands ? hands.info : camStatus}${isMuted() ? " · muted" : ""}`;
   const gesture = hands ? "open · fist · release" : "open · fist · release · mouse hold";
   const keys = isVertical ? "[V] [H] [N] [M]" : "[V] [H] [N] [M] [D]";
   hudHints.textContent = `${gesture} · ${keys}`;
@@ -1414,10 +1457,7 @@ addDetail.addEventListener("keydown", e => {
   if (e.key === "Enter") { e.preventDefault(); submitAddWord(); }
   if (e.key === "Escape") toggleAddPanel(false);
 });
-document.getElementById("btnStart").addEventListener("click", async () => {
-  await startAudio();
-  intro.classList.add("hidden");
-});
+document.getElementById("btnStart").addEventListener("click", () => dismissIntro());
 const btnClose = document.getElementById("btnClose");
 const btnSave = document.getElementById("btnSave");
 const btnReset = document.getElementById("btnReset");
