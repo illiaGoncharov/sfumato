@@ -809,7 +809,13 @@ async function startCamera() {
     btnCam.textContent = "◉ camera on";
   } catch (err) {
     console.warn(err);
-    camStatus = "camera denied — mouse fallback";
+    if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+      camStatus = "camera blocked — allow for this site";
+    } else if (err?.name === "NotFoundError") {
+      camStatus = "no camera found — mouse fallback";
+    } else {
+      camStatus = `camera failed: ${err?.message || err}`;
+    }
   }
 }
 

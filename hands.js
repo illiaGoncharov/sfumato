@@ -1,5 +1,10 @@
 import { FilesetResolver, HandLandmarker } from "./vendor/vision_bundle.mjs";
 
+// Пути от модуля, не от URL страницы — иначе на GitHub Pages (/repo/) WASM уезжает в корень сайта
+const ASSET_ROOT = new URL(".", import.meta.url);
+const WASM_DIR = new URL("vendor/wasm", ASSET_ROOT).href;
+const MODEL_URL = new URL("vendor/hand_landmarker.task", ASSET_ROOT).href;
+
 const PALM = [0, 5, 9, 13, 17];        // запястье и основания пальцев: центр ладони
 const FIST = 1.35;                     // кулак: средний вылет кончиков / размер ладони ниже этого
 const OPEN = 1.65;                     // ладонь: выше этого
@@ -24,18 +29,39 @@ class OneEuro {
 
 // video: <video>-элемент; toScene(nx, ny) -> [x, y] в координатах сцены
 // onClose(p) вызывается, когда рука сжалась, onOpen(p) когда раскрылась
+const LANDMARKER_OPTS = {
+  runningMode: "VIDEO",
+  numHands: 2,
+  minHandDetectionConfidence: 0.4,
+  minHandPresenceConfidence: 0.4,
+  minTrackingConfidence: 0.4,
+};
+
+async function createLandmarker(vision) {
+  try {
+    return await HandLandmarker.createFromOptions(vision, {
+      ...LANDMARKER_OPTS,
+      baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+    });
+  } catch {
+    return await HandLandmarker.createFromOptions(vision, {
+      ...LANDMARKER_OPTS,
+      baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+    });
+  }
+}
+
 export async function startHands(video, { toScene, onClose, onOpen }) {
-  const vision = await FilesetResolver.forVisionTasks("./vendor/wasm");
-  const landmarker = await HandLandmarker.createFromOptions(vision, {
-    baseOptions: { modelAssetPath: "./vendor/hand_landmarker.task", delegate: "GPU" },
-    runningMode: "VIDEO",
-    numHands: 2,
-    minHandDetectionConfidence: 0.4, // ниже порог: кулаки теряются реже
-    minHandPresenceConfidence: 0.4,
-    minTrackingConfidence: 0.4,
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("Camera needs HTTPS or localhost");
+  }
+  video.srcObject = await navigator.mediaDevices.getUserMedia({
+    video: { width: 1280, height: 720, facingMode: "user" },
   });
-  video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: "user" } });
   await video.play();
+
+  const vision = await FilesetResolver.forVisionTasks(WASM_DIR);
+  const landmarker = await createLandmarker(vision);
 
   // По одному указателю на руку: невидимый круг в центре ладони. Тянет слова, пока рука открыта
   const pointers = Array.from({ length: 2 }, (_, i) => ({
