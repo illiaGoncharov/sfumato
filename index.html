@@ -33,17 +33,18 @@
   }
   #stage {
     position: relative;
-    width: 960px;
-    height: 540px;
+    aspect-ratio: 16 / 9;
+    width: min(960px, calc(100vw - 24px), calc((100vh - 24px) * 16 / 9));
+    height: auto;
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border);
     background: radial-gradient(ellipse at 50% 50%, #121620 0%, #08090d 100%);
-    transition: width 0.25s ease, height 0.25s ease, box-shadow 0.25s ease;
+    transition: width 0.25s ease, box-shadow 0.25s ease;
   }
   #stage.vertical {
-    width: 382px;
-    height: 680px;
+    aspect-ratio: 9 / 16;
+    width: min(382px, calc(100vw - 24px), calc((100vh - 24px) * 9 / 16));
   }
   #stage.clean {
     box-shadow: none;
@@ -62,9 +63,24 @@
   }
   #stage.vertical .top-bar {
     justify-content: flex-end;
+    left: 8px;
+    right: 8px;
+    top: 8px;
+  }
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+    max-width: 100%;
   }
   .top-bar, #hud {
     transition: opacity 0.25s ease;
+  }
+  @media (max-width: 520px) {
+    .top-bar .title { display: none; }
+    .badge-btn { font-size: 10px; padding: 5px 8px; }
+    #hud { left: 8px; right: 8px; font-size: 10px; white-space: pre-wrap; }
   }
   canvas {
     display: block;
@@ -136,8 +152,8 @@
   }
   #modal.open { display: flex; }
   .modal-card {
-    width: 520px;
-    max-height: 480px;
+    width: min(520px, calc(100vw - 32px));
+    max-height: min(480px, calc(100vh - 32px));
     background: #11141c;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -197,11 +213,11 @@
     <div class="title">
       <b>sfumato</b>
     </div>
-    <div style="display:flex; gap:8px;">
-      <button class="badge-btn" id="btnAspect" title="Shortcut: V">▯ 9:16 [V]</button>
-      <button class="badge-btn" id="btnClean" title="Shortcut: H">👁 hide UI [H]</button>
-      <button class="badge-btn" id="btnCam" title="Shortcut: C">◉ camera [C]</button>
-      <button class="badge-btn" id="btnEdit" title="Shortcut: E">✎ words [E]</button>
+    <div class="toolbar">
+      <button class="badge-btn" id="btnAspect" title="Shortcut: V">9:16 [V]</button>
+      <button class="badge-btn" id="btnClean" title="Shortcut: H">hide UI [H]</button>
+      <button class="badge-btn" id="btnCam" title="Shortcut: C">cam [C]</button>
+      <button class="badge-btn" id="btnEdit" title="Shortcut: E">words [E]</button>
     </div>
   </div>
 
@@ -212,7 +228,7 @@
     <div class="modal-card">
       <div class="modal-head">
         <h3>Words</h3>
-        <button class="badge-btn" id="btnClose">✕ Esc</button>
+        <button class="badge-btn" id="btnClose">close Esc</button>
       </div>
       <p class="modal-sub">One pair per line: <code>category / detail</code></p>
       <textarea id="wordsText" spellcheck="false"></textarea>
@@ -824,7 +840,7 @@ async function startCamera() {
     if ("filter" in smallCtx) smallCtx.filter = VIDEO_FILTER; // Safari: останется цветной растянутый маленький кадр
     disableMouseInput();
     pointers = hands.pointers;
-    btnCam.textContent = "◉ camera on";
+    btnCam.textContent = "cam on";
   } catch (err) {
     console.warn(err);
     if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
@@ -1035,7 +1051,7 @@ function setAspect(vertical) {
   canvas.width = WIDTH * SCALE;
   canvas.height = HEIGHT * SCALE;
   stage.classList.toggle("vertical", isVertical);
-  btnAspect.textContent = isVertical ? "▭ 16:9 [V]" : "▯ 9:16 [V]";
+  btnAspect.textContent = isVertical ? "16:9 [V]" : "9:16 [V]";
   grainPattern = ctx.createPattern(grain, "repeat");
   words.forEach((w, i) => {
     w.recalcHome(i, words.length);
@@ -1049,7 +1065,7 @@ window.toggleClean = toggleClean;
 function toggleClean(force) {
   isClean = force !== undefined ? force : !isClean;
   stage.classList.toggle("clean", isClean);
-  btnClean.textContent = isClean ? "👁 show UI [H]" : "👁 hide UI [H]";
+  btnClean.textContent = isClean ? "show UI [H]" : "hide UI [H]";
 }
 
 btnAspect.addEventListener("click", () => setAspect(!isVertical));
