@@ -433,12 +433,12 @@
 
 <script type="module">
 import { oklch, formatRgb } from "./vendor/culori.min.mjs";
-import { startHands } from "./hands.js?v=6";
-import { startAudio, setMuted, isMuted, updateAmbient, playChord, playBurst } from "./audio.js?v=1";
+import { startHands } from "./js/hands.js?v=7";
+import { startAudio, setMuted, isMuted, updateAmbient, playChord, playBurst } from "./js/audio.js?v=2";
 import {
   initWordsStore, loadLibraryRaw, replaceLibraryRaw, addWord, deleteWordAt,
   parseWords, isCloudEnabled, linkEmail,
-} from "./words-store.js";
+} from "./js/words-store.js";
 
 // Дефолтный список в формате «категория / деталь»
 const DEFAULT_WORDS_RAW = `архитектура / эркер

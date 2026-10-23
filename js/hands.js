@@ -1,7 +1,7 @@
-import { FilesetResolver, HandLandmarker } from "./vendor/vision_bundle.mjs";
+import { FilesetResolver, HandLandmarker } from "../vendor/vision_bundle.mjs";
 
-// Пути от модуля, не от URL страницы — иначе на GitHub Pages (/repo/) WASM уезжает в корень сайта
-const ASSET_ROOT = new URL(".", import.meta.url);
+// Пути от корня репо (js/ → ../), не от URL страницы
+const ASSET_ROOT = new URL("../", import.meta.url);
 const WASM_DIR = new URL("vendor/wasm", ASSET_ROOT).href;
 const MODEL_URL = new URL("vendor/hand_landmarker.task", ASSET_ROOT).href;
 

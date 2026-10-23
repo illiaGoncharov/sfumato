@@ -1,0 +1,57 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>sfumato / spike</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font: 14px "IBM Plex Mono", monospace; }
+  #stage { position: relative; width: 960px; height: 540px; margin: 16px auto; }
+  video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  #hud { position: absolute; left: 8px; top: 8px; white-space: pre; text-shadow: 0 0 4px #000; }
+</style>
+<div id="stage">
+  <video id="cam" playsinline muted></video>
+  <canvas id="out" width="960" height="540"></canvas>
+  <div id="hud">...</div>
+</div>
+<script type="module">
+import { FilesetResolver, HandLandmarker } from "../vendor/vision_bundle.mjs";
+
+const TIPS = [4, 8, 12, 16, 20]; // кончики пальцев
+const delegate = new URLSearchParams(location.search).get("cpu") ? "CPU" : "GPU";
+const hud = document.getElementById("hud");
+const ctx = document.getElementById("out").getContext("2d");
+const video = document.getElementById("cam");
+
+const vision = await FilesetResolver.forVisionTasks("../vendor/wasm");
+const landmarker = await HandLandmarker.createFromOptions(vision, {
+  baseOptions: { modelAssetPath: "./vendor/hand_landmarker.task", delegate },
+  runningMode: "VIDEO",
+  numHands: 2,
+});
+
+video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: "user" } });
+await video.play();
+
+let last = -1, fps = 0, t0 = performance.now(), n = 0;
+const hasFilter = "filter" in ctx;
+
+function frame(now) {
+  // детект только на новом кадре видео
+  if (video.currentTime !== last) {
+    last = video.currentTime;
+    const { landmarks } = landmarker.detectForVideo(video, now);
+    ctx.clearRect(0, 0, 960, 540);
+    ctx.fillStyle = "#ff9a3c";
+    for (const hand of landmarks)
+      for (const i of TIPS) {
+        ctx.beginPath();
+        ctx.arc(hand[i].x * 960, hand[i].y * 540, 6, 0, 7);
+        ctx.fill();
+      }
+    n++;
+    if (now - t0 >= 1000) { fps = n; n = 0; t0 = now; }
+    hud.textContent = `fps ${fps}\nдельегат ${delegate}\nctx.filter ${hasFilter}\nруки ${landmarks.length}`;
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

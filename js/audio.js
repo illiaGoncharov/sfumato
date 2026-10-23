@@ -2,7 +2,7 @@
  * Генеративный эмбиент: сухие импульсы (Alva Noto) + длинные ноты (Sakamoto).
  * Запуск только после жеста пользователя (Tone.start).
  */
-import * as Tone from "./vendor/tone/index.js";
+import * as Tone from "../vendor/tone/index.js";
 
 const SCALE = ["D3", "F3", "A3", "C4", "D4", "F4", "A4", "C5"];
 const MASTER_DB = -20;

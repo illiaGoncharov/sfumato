@@ -29,7 +29,7 @@ export function parseWords(text) {
 
 export async function initWordsStore() {
   try {
-    const cfg = await import("./config.js");
+    const cfg = await import("../config.js");
     if (cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY) {
       const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.49.1");
       client = createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);

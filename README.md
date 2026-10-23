@@ -16,7 +16,7 @@ All vision runs **on your device**. The camera stream is not uploaded; MediaPipe
 
 Generative ambient built with [Tone.js](https://tonejs.github.io/) (MIT): sparse pulses in the spirit of Alva Noto, slow harmonized tones closer to Ryuichi Sakamoto. Hand density and height modulate a quiet drone; a fist-held line triggers a soft chord; release adds a dry click and reverb swell. **Start** on the intro screen unlocks audio; **M** mutes.
 
-Tune the palette separately: open [`audio-spike.html`](audio-spike.html) locally.
+Tune the palette separately: open [`dev/audio-spike.html`](dev/audio-spike.html) locally.
 
 ## Your words
 
@@ -43,6 +43,17 @@ On macOS, turn off **Portrait** and **Background** in the camera menu—they bre
 ## Stack
 
 Vanilla JS · Canvas 2D · MediaPipe · Tone.js · culori · d3-delaunay · optional Supabase · GitHub Pages
+
+## Layout
+
+| Path | Purpose |
+|------|---------|
+| `index.html` | Live demo (GitHub Pages root) |
+| `js/` | App modules (`hands`, `audio`, `words-store`) |
+| `vendor/` | MediaPipe, Tone.js, culori, d3-delaunay |
+| `dev/` | Local spikes (`spike.html`, `audio-spike.html`) — not linked from demo |
+| `docs/` | `BACKLOG.md`, `CURATORIAL.md` (not deployed) |
+| `supabase/` | SQL schema + setup notes |
 
 ## Run locally
 
