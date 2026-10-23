@@ -23,5 +23,10 @@ cp "$tmp/package/bundled/culori.min.mjs" vendor/
 (cd "$tmp" && rm -rf package* && npm pack d3-delaunay --silent && tar xzf d3-delaunay-*.tgz)
 cp "$tmp/package/dist/d3-delaunay.min.js" vendor/
 
+# 4. Tone.js (MIT, ambient / sound slice)
+(cd "$tmp" && rm -rf package* && npm pack tone --silent && tar xzf tone-*.tgz)
+rm -rf vendor/tone
+cp -R "$tmp/package/build/esm" vendor/tone
+
 rm -rf "$tmp"
-echo "ok: vendor/ готов (MediaPipe, culori, d3-delaunay)"
+echo "ok: vendor/ готов (MediaPipe, culori, d3-delaunay, tone)"

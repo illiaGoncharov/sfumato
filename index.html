@@ -5,6 +5,14 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <title>sfumato</title>
+<meta name="description" content="Interactive browser artwork: blurred webcam, hand-tracked words, generative ambient sound. Camera stays on your device.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="sfumato">
+<meta property="og:description" content="Peripheral sensations drift as words; gestures briefly align them into lines. Camera and sound run locally in your browser.">
+<meta property="og:image" content="https://illiaGoncharov.github.io/sfumato/og-image.png">
+<meta property="og:url" content="https://illiaGoncharov.github.io/sfumato/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -67,7 +75,8 @@
     cursor: none;
   }
   #stage.clean .top-bar,
-  #stage.clean #hud {
+  #stage.clean #hud,
+  #stage.clean #addPanel {
     opacity: 0 !important;
     pointer-events: none !important;
   }
@@ -229,10 +238,135 @@
     align-items: center;
   }
   .foot-btns { display: flex; gap: 8px; }
+  #intro {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(6, 8, 12, 0.94);
+    backdrop-filter: blur(14px);
+    padding: 24px;
+  }
+  #intro.hidden { display: none; }
+  .intro-card {
+    max-width: 420px;
+    padding: 28px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(14, 17, 24, 0.95);
+    text-align: left;
+  }
+  .intro-card h1 {
+    margin: 0 0 12px;
+    font-weight: 400;
+    font-style: italic;
+    font-size: 22px;
+  }
+  .intro-card ul {
+    margin: 0 0 20px;
+    padding-left: 18px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .intro-card .badge-btn { width: 100%; padding: 12px; }
+  #addPanel {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 72px;
+    z-index: 8;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    background: rgba(8, 10, 14, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+  }
+  #addPanel.open { display: flex; }
+  #stage.vertical #addPanel { bottom: max(120px, 18%); }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    pointer-events: auto;
+    font: inherit;
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: rgba(20, 24, 32, 0.8);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .chip.active { border-color: rgba(255, 255, 255, 0.35); background: rgba(40, 48, 62, 0.95); }
+  #addDetail {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #090b0f;
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+  }
+  .add-hint { font-size: 10px; color: var(--muted); margin: 0; }
+  .word-list {
+    max-height: 120px;
+    overflow: auto;
+    font-size: 11px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px;
+  }
+  .word-list div {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 2px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .word-list button {
+    font: inherit;
+    font-size: 10px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .starter-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  #emailLinkRow { display: flex; gap: 6px; margin-top: 8px; }
+  #emailLinkRow input {
+    flex: 1;
+    font: inherit;
+    font-size: 11px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #090b0f;
+    color: var(--text);
+  }
 </style>
 <script src="./vendor/d3-delaunay.min.js"></script>
 </head>
 <body>
+
+<div id="intro">
+  <div class="intro-card">
+    <h1>sfumato</h1>
+    <p style="margin:0 0 12px;font-size:12px;color:var(--muted);line-height:1.5">
+      Blurred self-portrait and drifting words. Open hand collects; fist holds three; release bursts.
+    </p>
+    <ul>
+      <li>Camera and hand tracking run <strong>only in your browser</strong> — video is not uploaded.</li>
+      <li>Generative ambient sound (headphones welcome). Press <strong>M</strong> to mute.</li>
+      <li>Add your own sensations with <strong>N</strong> or restore them via optional cloud sync.</li>
+    </ul>
+    <button class="badge-btn" id="btnStart" type="button">Start</button>
+  </div>
+</div>
 
 <video id="cam" playsinline muted style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></video>
 
@@ -247,7 +381,19 @@
       <button class="badge-btn" id="btnAspect" title="Shortcut: V">9:16 [V]</button>
       <button class="badge-btn" id="btnClean" title="Shortcut: H">hide UI [H]</button>
       <button class="badge-btn" id="btnCam" title="Shortcut: C">cam [C]</button>
+      <button class="badge-btn" id="btnMute" title="Shortcut: M">sound [M]</button>
+      <button class="badge-btn" id="btnAdd" title="Shortcut: N">add [N]</button>
       <button class="badge-btn" id="btnEdit" title="Shortcut: E">words [E]</button>
+    </div>
+  </div>
+
+  <div id="addPanel">
+    <p class="add-hint" id="addPrompt">What sound is in the room right now?</p>
+    <div class="chip-row" id="chipRow"></div>
+    <input id="addDetail" type="text" maxlength="80" placeholder="your detail (2–80 chars)" autocomplete="off">
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="badge-btn" type="button" id="btnAddCancel">cancel</button>
+      <button class="badge-btn" type="button" id="btnAddSave" style="background:#203428;border-color:#3a6549">add</button>
     </div>
   </div>
 
@@ -263,8 +409,18 @@
         <h3>Words</h3>
         <button class="badge-btn" id="btnClose">close Esc</button>
       </div>
-      <p class="modal-sub">One pair per line: <code>category / detail</code></p>
+      <p class="modal-sub">Your library (max 60). Quick add: <strong>N</strong>. Advanced: one pair per line <code>category / detail</code>.</p>
+      <div class="word-list" id="wordList"></div>
+      <div class="starter-row">
+        <button type="button" class="badge-btn" id="btnStarterRu">starter RU</button>
+        <button type="button" class="badge-btn" id="btnStarterEn">starter EN</button>
+        <button type="button" class="badge-btn" id="btnClearWords">clear all</button>
+      </div>
       <textarea id="wordsText" spellcheck="false"></textarea>
+      <div id="emailLinkRow" style="display:none">
+        <input id="emailLink" type="email" placeholder="email to sync across devices">
+        <button type="button" class="badge-btn" id="btnEmailLink">link</button>
+      </div>
       <div class="modal-foot">
         <button class="badge-btn" id="btnReset">Reset defaults</button>
         <div class="foot-btns">
@@ -277,7 +433,12 @@
 
 <script type="module">
 import { oklch, formatRgb } from "./vendor/culori.min.mjs";
-import { startHands } from "./hands.js?v=5";
+import { startHands } from "./hands.js?v=6";
+import { startAudio, setMuted, isMuted, updateAmbient, playChord, playBurst } from "./audio.js?v=1";
+import {
+  initWordsStore, loadLibraryRaw, replaceLibraryRaw, addWord, deleteWordAt,
+  parseWords, isCloudEnabled, linkEmail,
+} from "./words-store.js";
 
 // Дефолтный список в формате «категория / деталь»
 const DEFAULT_WORDS_RAW = `архитектура / эркер
@@ -321,8 +482,44 @@ const DEFAULT_WORDS_RAW = `архитектура / эркер
 сон / недосказанная фраза
 тишина / дыхание в наушниках`;
 
+const DEFAULT_WORDS_EN = `sound / distant radio static
+light / strip under the door
+smell / wet concrete
+touch / radiator under the palm
+taste / cold coffee
+place / empty platform
+time / slowed clock
+body / tired shoulders
+memory / film grain
+architecture / bay window
+painting / sfumato
+city / courtyard well
+texture / peeling plaster
+silence / transformer hum`;
+
+const FEELING_CHIPS = [
+  { id: "sound", label: "sound" },
+  { id: "smell", label: "smell" },
+  { id: "light", label: "light" },
+  { id: "touch", label: "touch" },
+  { id: "taste", label: "taste" },
+  { id: "place", label: "place" },
+  { id: "time", label: "time" },
+  { id: "body", label: "body" },
+];
+const ADD_PROMPTS = [
+  "What sound is in the room right now?",
+  "What does this place smell like?",
+  "What light do you see by the window?",
+  "What texture did you touch today?",
+  "What taste stayed with you?",
+  "What small detail caught your attention?",
+];
+
 const INK = "232, 238, 250"; // единственный нейтральный холодно-белый для всего интерфейса; цвет несут только слова
-const STORAGE_KEY = "sfumato_words_v2";
+let libraryRaw = "";
+let selectedChip = FEELING_CHIPS[0].id;
+let promptIdx = 0;
 const RING = 70;        // радиус кольца вокруг указателя, где слова «зависают»
 const MAX_SPEED = 30;   // потолок скорости (нужен для взрыва; обычная скорость мала из-за мягких сил)
 const FRICTION = 0.93;  // трение: выше = плавнее, но дольше «плывут»
@@ -344,24 +541,6 @@ const HOLD_LIFT = 90;   // на сколько выше кулака висит 
 const BURST = 34;       // сила взрыва при раскрытии руки (слова из кулака летят в 1.8 раза сильнее)
 const BURST_FREE_MS = 1200; // сколько слова летят свободно, потом возвращаются
 const GAP = 8;          // зазор между подписями
-
-function loadRawWords() {
-  return localStorage.getItem(STORAGE_KEY) || DEFAULT_WORDS_RAW;
-}
-
-function parseWords(text) {
-  return text
-    .split("\n")
-    .map(line => line.trim())
-    .filter(Boolean)
-    .map(line => {
-      const parts = line.split("/").map(s => s.trim());
-      return {
-        category: parts[0] || "",
-        detail: parts[1] || parts[0] || ""
-      };
-    });
-}
 
 // -------------------------------------------------------------
 // Холст, сцена и масштаб
@@ -612,11 +791,16 @@ class WordNode {
 let words = [];
 
 function rebuildWords(rawText) {
+  libraryRaw = rawText;
   const parsed = parseWords(rawText);
   words = parsed.map((item, idx) => new WordNode(item.category, item.detail, idx, parsed.length));
+  refreshWordList();
 }
 
-rebuildWords(loadRawWords());
+async function persistWords(rawText) {
+  libraryRaw = await replaceLibraryRaw(rawText);
+  rebuildWords(libraryRaw);
+}
 
 // Мягкое расталкивание рамок: слова «баблятся» друг о друга, но не перекрываются
 function separate(nodes) {
@@ -729,6 +913,7 @@ function grab(p, now) {
   near.sort((a, b) => a.x - b.x); // строка читается слева направо
   near.forEach(w => { w.slot = { x: w.x, y: w.y, alpha: 0.3 }; });
   holds.set(p, { words: near, t0: now });
+  if (near.length) playChord(near.map(w => w.hue));
 }
 
 // Раскрытие: держимые слова отпускаются и взрываются вместе со всеми
@@ -737,6 +922,7 @@ function release(p, now) {
   holds.delete(p);
   for (const w of held) { w.slot = null; w.freeUntil = now + BURST_FREE_MS; }
   burst(p.x, p.y, held);
+  playBurst();
 }
 
 // Строка висит над кулаком и следует за рукой
@@ -910,6 +1096,7 @@ let showDebug = false;
 
 window.addEventListener("keydown", e => {
   if (e.key === "Escape") {
+    if (addPanel.classList.contains("open")) { toggleAddPanel(false); return; }
     if (modal.classList.contains("open")) { closeModal(); return; }
     if (isClean) { toggleClean(false); return; }
   }
@@ -925,6 +1112,11 @@ window.addEventListener("keydown", e => {
     setAspect(!isVertical);
   } else if (e.key === "h" || e.key === "H" || e.key === "р" || e.key === "Р") {
     toggleClean();
+  } else if (e.key === "m" || e.key === "M" || e.key === "ь" || e.key === "Ь") {
+    toggleMute();
+  } else if (e.key === "n" || e.key === "N" || e.key === "т" || e.key === "Т") {
+    if (!intro.classList.contains("hidden")) return;
+    toggleAddPanel();
   }
 });
 
@@ -972,6 +1164,12 @@ function render(now) {
   separate(words);
   [...words].sort((a, b) => a.dist - b.dist).forEach((w, i) => { w.rank = i; });
   layoutHolds(now);
+
+  if (pullers.length) {
+    const lead = pullers[0];
+    const nearCount = words.filter(w => Math.hypot(w.x - lead.x, w.y - lead.y) < lead.radius).length;
+    updateAmbient({ nearCount, handYNorm: lead.y / HEIGHT });
+  }
 
   // 2. Слой созвездий (Delaunay) между указателями и словами рядом
   const activeNodes = words.filter(w => w.dist < 220);
@@ -1080,9 +1278,9 @@ function drawSafeGrid(ctx) {
 }
 
 function updateHud() {
-  hudStatus.textContent = `fps ${currentFps} · words ${words.length} · ${hands ? hands.info : camStatus}`;
+  hudStatus.textContent = `fps ${currentFps} · words ${words.length} · ${hands ? hands.info : camStatus}${isMuted() ? " · muted" : ""}`;
   const gesture = hands ? "open · fist · release" : "open · fist · release · mouse hold";
-  const keys = isVertical ? "[V] [H] [E]" : "[V] [H] [E] [D]";
+  const keys = isVertical ? "[V] [H] [N] [M]" : "[V] [H] [N] [M] [D]";
   hudHints.textContent = `${gesture} · ${keys}`;
 }
 
@@ -1095,6 +1293,74 @@ const btnAspect = document.getElementById("btnAspect");
 const btnClean = document.getElementById("btnClean");
 const btnEdit = document.getElementById("btnEdit");
 const btnCam = document.getElementById("btnCam");
+const btnMute = document.getElementById("btnMute");
+const btnAdd = document.getElementById("btnAdd");
+const intro = document.getElementById("intro");
+const addPanel = document.getElementById("addPanel");
+const addDetail = document.getElementById("addDetail");
+const addPrompt = document.getElementById("addPrompt");
+const chipRow = document.getElementById("chipRow");
+const wordList = document.getElementById("wordList");
+const emailLinkRow = document.getElementById("emailLinkRow");
+
+function toggleMute() {
+  setMuted(!isMuted());
+  btnMute.textContent = isMuted() ? "sound off [M]" : "sound [M]";
+  updateHud();
+}
+
+function toggleAddPanel(force) {
+  const open = force !== undefined ? force : !addPanel.classList.contains("open");
+  addPanel.classList.toggle("open", open);
+  if (open) {
+    promptIdx = (promptIdx + 1) % ADD_PROMPTS.length;
+    addPrompt.textContent = ADD_PROMPTS[promptIdx];
+    addDetail.value = "";
+    addDetail.focus();
+  }
+}
+
+function initChips() {
+  chipRow.innerHTML = "";
+  for (const chip of FEELING_CHIPS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip" + (chip.id === selectedChip ? " active" : "");
+    b.textContent = chip.label;
+    b.addEventListener("click", () => {
+      selectedChip = chip.id;
+      initChips();
+    });
+    chipRow.appendChild(b);
+  }
+}
+
+function refreshWordList() {
+  const parsed = parseWords(libraryRaw);
+  wordList.innerHTML = "";
+  parsed.forEach((w, i) => {
+    const row = document.createElement("div");
+    row.innerHTML = `<span>${w.category} / ${w.detail}</span>`;
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "remove";
+    del.addEventListener("click", async () => {
+      libraryRaw = await deleteWordAt(i, libraryRaw);
+      rebuildWords(libraryRaw);
+      wordsText.value = libraryRaw;
+    });
+    row.appendChild(del);
+    wordList.appendChild(row);
+  });
+}
+
+async function submitAddWord() {
+  const next = await addWord(selectedChip, addDetail.value);
+  if (!next) return;
+  rebuildWords(next);
+  wordsText.value = libraryRaw;
+  toggleAddPanel(false);
+}
 
 function sceneLayout() {
   const desktop = window.matchMedia("(min-width: 768px)").matches;
@@ -1140,12 +1406,25 @@ btnCam.addEventListener("click", () => {
   if (hands) stopCamera();
   else startCamera();
 });
+btnMute.addEventListener("click", toggleMute);
+btnAdd.addEventListener("click", () => toggleAddPanel());
+document.getElementById("btnAddCancel").addEventListener("click", () => toggleAddPanel(false));
+document.getElementById("btnAddSave").addEventListener("click", () => submitAddWord());
+addDetail.addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); submitAddWord(); }
+  if (e.key === "Escape") toggleAddPanel(false);
+});
+document.getElementById("btnStart").addEventListener("click", async () => {
+  await startAudio();
+  intro.classList.add("hidden");
+});
 const btnClose = document.getElementById("btnClose");
 const btnSave = document.getElementById("btnSave");
 const btnReset = document.getElementById("btnReset");
 
 function openModal() {
-  wordsText.value = loadRawWords();
+  wordsText.value = libraryRaw;
+  refreshWordList();
   modal.classList.add("open");
   wordsText.focus();
 }
@@ -1157,27 +1436,57 @@ function closeModal() {
 btnEdit.addEventListener("click", openModal);
 btnClose.addEventListener("click", closeModal);
 
-btnSave.addEventListener("click", () => {
+btnSave.addEventListener("click", async () => {
   const text = wordsText.value.trim();
-  if (text) {
-    localStorage.setItem(STORAGE_KEY, text);
-    rebuildWords(text);
-  }
+  if (text) await persistWords(text);
   closeModal();
 });
 
-btnReset.addEventListener("click", () => {
-  localStorage.removeItem(STORAGE_KEY);
+btnReset.addEventListener("click", async () => {
   wordsText.value = DEFAULT_WORDS_RAW;
-  rebuildWords(DEFAULT_WORDS_RAW);
+  await persistWords(DEFAULT_WORDS_RAW);
   closeModal();
 });
 
-applySceneSize();
+document.getElementById("btnStarterRu").addEventListener("click", async () => {
+  wordsText.value = DEFAULT_WORDS_RAW;
+  await persistWords(DEFAULT_WORDS_RAW);
+});
+
+document.getElementById("btnStarterEn").addEventListener("click", async () => {
+  wordsText.value = DEFAULT_WORDS_EN;
+  await persistWords(DEFAULT_WORDS_EN);
+});
+
+document.getElementById("btnClearWords").addEventListener("click", async () => {
+  wordsText.value = "";
+  await persistWords("");
+});
+
+document.getElementById("btnEmailLink").addEventListener("click", async () => {
+  const email = document.getElementById("emailLink").value.trim();
+  if (!email) return;
+  try {
+    await linkEmail(email);
+    alert("Check your email to confirm sync.");
+  } catch (err) {
+    alert(err.message || "Email link failed");
+  }
+});
+
 window.addEventListener("resize", () => applySceneSize());
 
-// Запуск анимации
-requestAnimationFrame(render);
+async function boot() {
+  await initWordsStore();
+  libraryRaw = await loadLibraryRaw(DEFAULT_WORDS_RAW);
+  rebuildWords(libraryRaw);
+  if (isCloudEnabled()) emailLinkRow.style.display = "flex";
+  initChips();
+  applySceneSize();
+  requestAnimationFrame(render);
+}
+
+boot();
 </script>
 
 </body>

@@ -1,8 +1,10 @@
 # sfumato
 
-**Interactive browser artwork (2026)** — blurred webcam, hand-tracked words, fleeting lines of meaning.
+**Interactive browser artwork (2026)** — blurred webcam, hand-tracked words, generative ambient, fleeting lines of meaning.
 
 [**Live demo**](https://illiaGoncharov.github.io/sfumato/) · Chrome or Arc on desktop · camera permission required
+
+![Preview](og-image.png)
 
 ## About
 
@@ -10,34 +12,47 @@
 
 All vision runs **on your device**. The camera stream is not uploaded; MediaPipe Hand Landmarker executes locally via WebAssembly.
 
+## Sound
+
+Generative ambient built with [Tone.js](https://tonejs.github.io/) (MIT): sparse pulses in the spirit of Alva Noto, slow harmonized tones closer to Ryuichi Sakamoto. Hand density and height modulate a quiet drone; a fist-held line triggers a soft chord; release adds a dry click and reverb swell. **Start** on the intro screen unlocks audio; **M** mutes.
+
+Tune the palette separately: open [`audio-spike.html`](audio-spike.html) locally.
+
+## Your words
+
+- **N** — quick add: pick a sense (sound, smell, light…) and type a short detail; the word appears in the scene immediately.
+- **E** — full library: list, starter packs (RU / EN), advanced `category / detail` textarea.
+- Data is stored in **localStorage** by default.
+- Optional **Supabase** sync (personal library only, RLS): copy [`config.example.js`](config.example.js) → `config.js`, run [`supabase/schema.sql`](supabase/schema.sql), enable anonymous auth. Link email in the words modal to move the same library across devices.
+
 ## Controls
 
 | Input | Action |
 |--------|--------|
+| **Start** | Privacy + sound unlock |
 | **C** | Toggle webcam |
 | **V** | Toggle 9:16 / 16:9 canvas |
 | **H** | Hide UI (clean view) |
-| **E** | Edit word list (saved in `localStorage`) |
-| **Mouse** | Hold / release mimics fist gesture (sandbox without camera) |
+| **M** | Mute sound |
+| **N** | Add a sensation |
+| **E** | Edit word library |
+| **Mouse** | Hold / release mimics fist (when camera off) |
 
 On macOS, turn off **Portrait** and **Background** in the camera menu—they break hand tracking.
 
-**Arc stuck on an old build?** Fully quit Arc (Cmd+Q), reopen the demo URL, or open it in a **New Incognito Window**. Site data: lock icon → site settings → clear data, or `arc://settings/content/siteDetails?site=https%3A%2F%2FilliaGoncharov.github.io`. Camera: `arc://settings/content/camera` → allow `illiaGoncharov.github.io`.
-
 ## Stack
 
-Vanilla JS · Canvas 2D · [MediaPipe Tasks Vision](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker) · culori · d3-delaunay · static hosting on GitHub Pages
+Vanilla JS · Canvas 2D · MediaPipe · Tone.js · culori · d3-delaunay · optional Supabase · GitHub Pages
 
 ## Run locally
 
 ```bash
 git clone https://github.com/illiaGoncharov/sfumato.git
 cd sfumato
+./setup.sh   # if vendor/ is incomplete
 python3 -m http.server 8000
 # open http://localhost:8000
 ```
-
-Dependencies ship in `vendor/`. After a fresh clone, run `./setup.sh` only if files are missing.
 
 ## Author
 
