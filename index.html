@@ -34,7 +34,8 @@
   #stage {
     position: relative;
     aspect-ratio: 16 / 9;
-    width: min(960px, calc(100vw - 24px), calc((100vh - 24px) * 16 / 9));
+    /* телефон: компактно; десктоп — см. @media ниже */
+    width: min(960px, calc(100vw - 20px), calc((100vh - 20px) * 16 / 9));
     height: auto;
     border-radius: 8px;
     overflow: hidden;
@@ -44,7 +45,18 @@
   }
   #stage.vertical {
     aspect-ratio: 9 / 16;
-    width: min(382px, calc(100vw - 24px), calc((100vh - 24px) * 9 / 16));
+    width: min(382px, calc(100vw - 20px), calc((100vh - 20px) * 9 / 16));
+  }
+  @media (min-width: 768px) {
+    body { padding: 12px; }
+    #stage {
+      width: min(1360px, calc(100vw - 32px), calc((100vh - 32px) * 16 / 9));
+      border-radius: 10px;
+    }
+    #stage.vertical {
+      /* почти на всю высоту окна, до логической ширины холста 540px */
+      width: min(540px, calc(100vw - 32px), calc((100vh - 32px) * 9 / 16));
+    }
   }
   #stage.clean {
     box-shadow: none;
