@@ -50,7 +50,8 @@
   @media (min-width: 768px) {
     body { padding: 12px; }
     #stage {
-      width: min(1360px, calc(100vw - 32px), calc((100vh - 32px) * 16 / 9));
+      /* 1:1 с логическим холстом 1280×720 — кегль не растягивается CSS-ом */
+      width: min(1280px, calc(100vw - 32px), calc((100vh - 32px) * 16 / 9));
       border-radius: 10px;
     }
     #stage.vertical {
@@ -858,8 +859,21 @@ function toScene(nx, ny) {
   return [WIDTH - ((nx * vw - vw / 2) * s + WIDTH / 2), (ny * vh - vh / 2) * s + HEIGHT / 2];
 }
 
+function stopCamera() {
+  if (!hands) return;
+  for (const p of [...holds.keys()]) {
+    if (p.hand) release(p, performance.now());
+  }
+  hands.close();
+  hands = null;
+  disableMouseInput();
+  pointers = [mouse];
+  btnCam.textContent = "cam [C]";
+  camStatus = "camera: press [C]";
+  updateHud();
+}
+
 async function startCamera() {
-  if (hands) return;
   camStatus = "camera: starting…";
   updateHud();
   try {
@@ -874,9 +888,13 @@ async function startCamera() {
     if ("filter" in smallCtx) smallCtx.filter = VIDEO_FILTER; // Safari: останется цветной растянутый маленький кадр
     disableMouseInput();
     pointers = hands.pointers;
-    btnCam.textContent = "cam on";
+    btnCam.textContent = "cam off [C]";
   } catch (err) {
     console.warn(err);
+    video.srcObject?.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+    hands = null;
+    pointers = [mouse];
     if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
       camStatus = "camera blocked — lock icon → allow camera → reload";
     } else if (err?.name === "NotFoundError") {
@@ -901,7 +919,8 @@ window.addEventListener("keydown", e => {
   } else if (e.key === "d" || e.key === "D" || e.key === "в" || e.key === "В") {
     showDebug = !showDebug;
   } else if (e.key === "c" || e.key === "C" || e.key === "с" || e.key === "С") {
-    startCamera();
+    if (hands) stopCamera();
+    else startCamera();
   } else if (e.key === "v" || e.key === "V" || e.key === "м" || e.key === "М") {
     setAspect(!isVertical);
   } else if (e.key === "h" || e.key === "H" || e.key === "р" || e.key === "Р") {
@@ -1077,22 +1096,34 @@ const btnClean = document.getElementById("btnClean");
 const btnEdit = document.getElementById("btnEdit");
 const btnCam = document.getElementById("btnCam");
 
+function sceneLayout() {
+  const desktop = window.matchMedia("(min-width: 768px)").matches;
+  if (isVertical) return { w: 540, h: 960 };
+  return desktop ? { w: 1280, h: 720 } : { w: 960, h: 540 };
+}
+
+function applySceneSize() {
+  const { w, h } = sceneLayout();
+  if (w === WIDTH && h === HEIGHT) return;
+  WIDTH = w;
+  HEIGHT = h;
+  canvas.width = WIDTH * SCALE;
+  canvas.height = HEIGHT * SCALE;
+  grainPattern = ctx.createPattern(grain, "repeat");
+  words.forEach((word, i) => {
+    word.recalcHome(i, words.length);
+    word.x = Math.min(Math.max(word.x, 60), WIDTH - 60);
+    word.y = Math.min(Math.max(word.y, 50), HEIGHT - 50);
+  });
+  if (mouse) { mouse.x = WIDTH / 2; mouse.y = HEIGHT / 2; }
+}
+
 window.setAspect = setAspect;
 function setAspect(vertical) {
   isVertical = vertical;
-  WIDTH = isVertical ? 540 : 960;
-  HEIGHT = isVertical ? 960 : 540;
-  canvas.width = WIDTH * SCALE;
-  canvas.height = HEIGHT * SCALE;
+  applySceneSize();
   stage.classList.toggle("vertical", isVertical);
   btnAspect.textContent = isVertical ? "16:9 [V]" : "9:16 [V]";
-  grainPattern = ctx.createPattern(grain, "repeat");
-  words.forEach((w, i) => {
-    w.recalcHome(i, words.length);
-    w.x = Math.min(Math.max(w.x, 60), WIDTH - 60);
-    w.y = Math.min(Math.max(w.y, 50), HEIGHT - 50);
-  });
-  if (mouse) { mouse.x = WIDTH / 2; mouse.y = HEIGHT / 2; }
   updateHud();
 }
 
@@ -1105,7 +1136,10 @@ function toggleClean(force) {
 
 btnAspect.addEventListener("click", () => setAspect(!isVertical));
 btnClean.addEventListener("click", () => toggleClean());
-btnCam.addEventListener("click", startCamera);
+btnCam.addEventListener("click", () => {
+  if (hands) stopCamera();
+  else startCamera();
+});
 const btnClose = document.getElementById("btnClose");
 const btnSave = document.getElementById("btnSave");
 const btnReset = document.getElementById("btnReset");
@@ -1138,6 +1172,9 @@ btnReset.addEventListener("click", () => {
   rebuildWords(DEFAULT_WORDS_RAW);
   closeModal();
 });
+
+applySceneSize();
+window.addEventListener("resize", () => applySceneSize());
 
 // Запуск анимации
 requestAnimationFrame(render);

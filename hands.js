@@ -148,5 +148,10 @@ export async function startHands(video, { toScene, onClose, onOpen, onStatus }) 
         p.active = p.fade > 0.05;
       }
     },
+    close() {
+      try { landmarker.close(); } catch (_) { /* уже закрыт */ }
+      video.srcObject?.getTracks().forEach(t => t.stop());
+      video.srcObject = null;
+    },
   };
 }
