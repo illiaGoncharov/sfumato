@@ -8,7 +8,8 @@ if (!Tone) throw new Error("Load vendor/Tone.js before audio.js");
 
 /** Минорная пентатоника в D — спокойнее мажора, ближе к Insen */
 const SCALE = ["D3", "F3", "G3", "A3", "C4", "D4", "F4", "G4", "A4"];
-const MASTER_DB = -10;
+const isTouch = () => matchMedia("(pointer: coarse)").matches;
+let masterDb = -10;
 
 let ready = false;
 let muted = false;
@@ -33,13 +34,38 @@ function hueToNote(hue) {
   return SCALE[i];
 }
 
+/** Синхронно в обработчике tap/click — иначе iOS Safari не даст звук */
+export function unlockAudioContext() {
+  if (!Tone) return;
+  try {
+    Tone.start();
+    const ctx = Tone.getContext().rawContext;
+    if (ctx?.state === "suspended" && ctx.resume) ctx.resume();
+  } catch (err) {
+    console.warn("audio unlock failed", err);
+  }
+}
+
+async function ensureContextRunning() {
+  await Tone.start();
+  const ctx = Tone.getContext().rawContext;
+  if (ctx?.state === "suspended" && ctx.resume) await ctx.resume();
+}
+
 export async function startAudio() {
   if (ready) return;
-  await Tone.start();
+  masterDb = isTouch() ? -4 : -10;
+  await ensureContextRunning();
 
-  master = new Tone.Volume(MASTER_DB).toDestination();
-  reverb = new Tone.Reverb({ decay: 11, wet: 0.38 }).connect(master);
-  await reverb.generate();
+  master = new Tone.Volume(masterDb).toDestination();
+  reverb = new Tone.Reverb({ decay: isTouch() ? 7 : 11, wet: 0.38 }).connect(master);
+  try {
+    await reverb.generate();
+  } catch (err) {
+    console.warn("reverb generate failed, shorter tail", err);
+    reverb.decay = 4;
+    await reverb.generate();
+  }
 
   // Низкий гул (Vrioon-слой)
   droneFilter = new Tone.Filter(220, "lowpass").connect(reverb);
@@ -50,7 +76,7 @@ export async function startAudio() {
     envelope: { attack: 4, decay: 0.2, sustain: 0.55, release: 10 },
     modulationEnvelope: { attack: 3, decay: 0, sustain: 1, release: 8 },
   }).connect(droneFilter);
-  drone.volume.value = -14;
+  drone.volume.value = isTouch() ? -8 : -14;
 
   // Длинный «сакамото»-пад
   pad = new Tone.PolySynth(Tone.Synth, {
@@ -58,7 +84,7 @@ export async function startAudio() {
     oscillator: { type: "sine" },
     envelope: { attack: 2.5, decay: 1, sustain: 0.4, release: 6 },
   }).connect(reverb);
-  pad.volume.value = -18;
+  pad.volume.value = isTouch() ? -12 : -18;
 
   // Фоновый тик: тише, розовый шум, длиннее хвост — «далеко в комнате»
   idleTick = new Tone.NoiseSynth({
@@ -95,7 +121,10 @@ export async function startAudio() {
 
   drone.triggerAttack("D2");
   // Мягкий стартовый аккорд — сразу слышно, что звук живой
-  pad.triggerAttackRelease(["D3", "A3", "F4"], "2n", Tone.now() + 0.05, 0.25);
+  const t0 = Tone.now() + 0.05;
+  pad.triggerAttackRelease(["D3", "A3", "F4"], "2n", t0, isTouch() ? 0.45 : 0.25);
+  // Короткий «чирп» — сразу слышно на динамике телефона
+  pingSynth.triggerAttackRelease("A4", "8n", t0 + 0.08, isTouch() ? 0.35 : 0.2);
 
   // Idle редко: раз в ~4 такта, шанс ~30%, и пауза после жеста
   idleLoop = new Tone.Loop(time => {
@@ -119,7 +148,7 @@ export function isAudioReady() {
 export function setMuted(value) {
   muted = value;
   if (!master) return;
-  master.volume.rampTo(muted ? -100 : MASTER_DB, 0.25);
+  master.volume.rampTo(muted ? -100 : masterDb, 0.25);
 }
 
 export function isMuted() {

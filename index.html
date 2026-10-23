@@ -114,11 +114,6 @@
     text-align: center;
   }
   html.touch-portrait .hud-line + .hud-line { display: none; }
-  html.touch-portrait #stage.vertical #addPanel {
-    bottom: calc(52px + env(safe-area-inset-bottom, 0px));
-    left: 10px;
-    right: 10px;
-  }
   #stage {
     position: relative;
     aspect-ratio: 16 / 9;
@@ -282,8 +277,41 @@
       text-align: center;
     }
     .hud-line + .hud-line { display: none; }
-    #stage.vertical #addPanel {
-      bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+    #addDetail,
+    textarea,
+    #emailLink {
+      font-size: 16px;
+      line-height: 1.4;
+    }
+    #modal {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      align-items: flex-start;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    #modal .modal-card {
+      width: 100%;
+      max-width: none;
+      min-height: 100dvh;
+      border-radius: 0;
+      border-left: none;
+      border-right: none;
+    }
+    #modal textarea {
+      min-height: 38dvh;
+      height: auto;
+    }
+    #addPanel.open {
+      position: fixed;
+      left: 10px;
+      right: 10px;
+      top: max(118px, calc(env(safe-area-inset-top, 0px) + 108px));
+      bottom: auto;
+      z-index: 150;
+      max-height: min(42dvh, 320px);
+      overflow-y: auto;
     }
   }
   canvas {
@@ -465,7 +493,53 @@
     backdrop-filter: blur(10px);
   }
   #addPanel.open { display: flex; }
-  #stage.vertical #addPanel { bottom: max(120px, 18%); }
+  /* iOS не зумит поля с font-size ≥ 16px */
+  html.touch-portrait #addDetail,
+  html.touch-portrait textarea,
+  html.touch-portrait #emailLink {
+    font-size: 16px;
+    line-height: 1.4;
+  }
+  html.form-open body {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+  html.touch-portrait #modal {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    align-items: flex-start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: max(8px, env(safe-area-inset-top)) 0 max(8px, env(safe-area-inset-bottom));
+  }
+  html.touch-portrait #modal .modal-card {
+    width: 100%;
+    max-width: none;
+    min-height: min(100%, 100dvh);
+    max-height: none;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    margin: 0;
+  }
+  html.touch-portrait #modal textarea {
+    flex: 1;
+    min-height: 40dvh;
+    height: auto;
+  }
+  html.touch-portrait #addPanel.open {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    top: max(118px, calc(env(safe-area-inset-top, 0px) + 108px));
+    bottom: auto;
+    z-index: 150;
+    max-height: min(42dvh, 320px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
   .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip {
     pointer-events: auto;
@@ -544,7 +618,7 @@ if (matchMedia("(pointer: coarse) and (orientation: portrait)").matches) {
     </p>
     <ul>
       <li>Camera and hand tracking run <strong>only in your browser</strong> — video is not uploaded.</li>
-      <li>Generative ambient sound (headphones welcome). Press <strong>M</strong> to mute.</li>
+      <li>Generative ambient sound (headphones welcome). Press <strong>M</strong> to mute. On iPhone: turn off the silent switch and tap <strong>Start</strong> once.</li>
       <li>Add your own sensations with <strong>N</strong> or restore them via optional cloud sync.</li>
     </ul>
     <button class="badge-btn" id="btnStart" type="button">Start [Enter]</button>
@@ -622,7 +696,7 @@ if (document.documentElement.classList.contains("touch-portrait")) {
 <script type="module">
 import { oklch, formatRgb } from "./vendor/culori.min.mjs";
 import { startHands } from "./js/hands.js?v=9";
-import { startAudio, setMuted, isMuted, updateAmbient, playChord, playBurst } from "./js/audio.js?v=9";
+import { unlockAudioContext, startAudio, setMuted, isMuted, isAudioReady, updateAmbient, playChord, playBurst } from "./js/audio.js?v=10";
 import {
   initWordsStore, loadLibraryRaw, replaceLibraryRaw, addWord, deleteWordAt,
   parseWords, isCloudEnabled, linkEmail,
@@ -1296,6 +1370,11 @@ async function startCamera() {
 // Отладочная сетка 3:4 (безопасная зона для сетки профиля Instagram)
 let showDebug = false;
 
+function beginExperience() {
+  unlockAudioContext();
+  void dismissIntro();
+}
+
 async function dismissIntro() {
   const el = document.getElementById("intro");
   if (el.classList.contains("hidden")) return;
@@ -1305,12 +1384,13 @@ async function dismissIntro() {
     console.warn("audio start failed", err);
   }
   el.classList.add("hidden");
+  updateHud();
 }
 
 window.addEventListener("keydown", e => {
   if (e.key === "Enter" && !document.getElementById("intro").classList.contains("hidden")) {
     e.preventDefault();
-    dismissIntro();
+    beginExperience();
     return;
   }
   if (e.key === "Escape") {
@@ -1508,7 +1588,8 @@ function drawSafeGrid(ctx) {
 }
 
 function updateHud() {
-  hudStatus.textContent = `fps ${currentFps}${perfLite ? " lite" : ""} · words ${words.length} · ${hands ? hands.info : camStatus}${isMuted() ? " · muted" : ""}`;
+  const audioHint = !isAudioReady() ? " · tap Start for sound" : isMuted() ? " · muted" : "";
+  hudStatus.textContent = `fps ${currentFps}${perfLite ? " lite" : ""} · words ${words.length} · ${hands ? hands.info : camStatus}${audioHint}`;
   const gesture = hands ? "open · fist · release" : "open · fist · release · mouse hold";
   const mobile = document.documentElement.classList.contains("touch-portrait") || window.innerWidth < 768;
   const keys = isVertical ? "[V] [H] [N] [M]" : "[V] [H] [N] [M] [D]";
@@ -1540,6 +1621,18 @@ function toggleMute() {
   updateHud();
 }
 
+function setFormOpen(open) {
+  document.documentElement.classList.toggle("form-open", open);
+}
+
+function focusNoZoom(el) {
+  try {
+    el.focus({ preventScroll: true });
+  } catch {
+    el.focus();
+  }
+}
+
 function toggleAddPanel(force) {
   const open = force !== undefined ? force : !addPanel.classList.contains("open");
   addPanel.classList.toggle("open", open);
@@ -1547,8 +1640,9 @@ function toggleAddPanel(force) {
     promptIdx = (promptIdx + 1) % ADD_PROMPTS.length;
     addPrompt.textContent = ADD_PROMPTS[promptIdx];
     addDetail.value = "";
-    addDetail.focus();
+    requestAnimationFrame(() => focusNoZoom(addDetail));
   }
+  setFormOpen(addPanel.classList.contains("open") || modal.classList.contains("open"));
 }
 
 function initChips() {
@@ -1645,7 +1739,18 @@ addDetail.addEventListener("keydown", e => {
   if (e.key === "Enter") { e.preventDefault(); submitAddWord(); }
   if (e.key === "Escape") toggleAddPanel(false);
 });
-document.getElementById("btnStart").addEventListener("click", () => dismissIntro());
+const btnStart = document.getElementById("btnStart");
+btnStart.addEventListener("touchend", e => {
+  e.preventDefault();
+  beginExperience();
+}, { passive: false });
+btnStart.addEventListener("click", e => {
+  if (e.pointerType === "touch") return;
+  beginExperience();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && isAudioReady()) unlockAudioContext();
+});
 const btnClose = document.getElementById("btnClose");
 const btnSave = document.getElementById("btnSave");
 const btnReset = document.getElementById("btnReset");
@@ -1654,11 +1759,13 @@ function openModal() {
   wordsText.value = libraryRaw;
   refreshWordList();
   modal.classList.add("open");
-  wordsText.focus();
+  setFormOpen(true);
+  requestAnimationFrame(() => focusNoZoom(wordsText));
 }
 
 function closeModal() {
   modal.classList.remove("open");
+  setFormOpen(addPanel.classList.contains("open") || modal.classList.contains("open"));
 }
 
 btnEdit.addEventListener("click", openModal);
