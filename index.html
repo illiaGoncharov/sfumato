@@ -228,7 +228,7 @@
 
 <script type="module">
 import { oklch, formatRgb } from "./vendor/culori.min.mjs";
-import { startHands } from "./hands.js?v=4";
+import { startHands } from "./hands.js?v=5";
 
 // Дефолтный список в формате «категория / деталь»
 const DEFAULT_WORDS_RAW = `архитектура / эркер
@@ -652,6 +652,7 @@ const rect = () => stage.getBoundingClientRect();
 const stage = document.getElementById("stage");
 
 stage.addEventListener("mousemove", e => {
+  if (hands) return;
   const r = rect();
   mouse.x = (e.clientX - r.left) * (WIDTH / r.width);
   mouse.y = (e.clientY - r.top) * (HEIGHT / r.height);
@@ -659,6 +660,7 @@ stage.addEventListener("mousemove", e => {
 });
 
 stage.addEventListener("mouseleave", () => {
+  if (hands) return;
   mouse.active = false;
 });
 
@@ -744,17 +746,24 @@ function burst(x, y, held = []) {
 
 // Мышь: зажать = сжать кулак, отпустить = раскрыть
 stage.addEventListener("mousedown", e => {
-  if (e.target.closest("button, #modal")) return;
+  if (hands || e.target.closest("button, #modal")) return;
   mouse.closed = true;
   mouse.pull = false;
   grab(mouse, performance.now());
 });
 window.addEventListener("mouseup", () => {
-  if (!mouse.closed) return;
+  if (hands || !mouse.closed) return;
   mouse.closed = false;
   mouse.pull = true;
   release(mouse, performance.now());
 });
+
+function disableMouseInput() {
+  if (holds.has(mouse)) release(mouse, performance.now());
+  mouse.active = false;
+  mouse.closed = false;
+  mouse.pull = true;
+}
 
 // -------------------------------------------------------------
 // Камера: размытая дымка на фоне
@@ -813,7 +822,8 @@ async function startCamera() {
     small.width = trail.width = 128;
     small.height = trail.height = Math.round(128 * video.videoHeight / video.videoWidth);
     if ("filter" in smallCtx) smallCtx.filter = VIDEO_FILTER; // Safari: останется цветной растянутый маленький кадр
-    pointers = [mouse, ...hands.pointers];
+    disableMouseInput();
+    pointers = hands.pointers;
     btnCam.textContent = "◉ camera on";
   } catch (err) {
     console.warn(err);
@@ -939,8 +949,8 @@ function render(now) {
     ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
     ctx.fill();
   }
-  if (mouse.active) {
-    // Нежный радиус влияния мыши
+  if (mouse.active && !hands) {
+    // Нежный радиус влияния мыши (только без камеры)
     ctx.strokeStyle = `rgba(${INK}, 0.2)`;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
@@ -1001,7 +1011,10 @@ function drawSafeGrid(ctx) {
 }
 
 function updateHud() {
-  hud.textContent = `fps: ${currentFps} · words: ${words.length} · ${hands ? hands.info : camStatus}\nopen hand collects · fist holds · release = burst · mouse: hold & release · [V] aspect · [H] clean · [E] edit · [D] grid`;
+  const hint = hands
+    ? "open hand collects · fist holds · release = burst"
+    : "open hand collects · fist holds · release = burst · mouse: hold & release";
+  hud.textContent = `fps: ${currentFps} · words: ${words.length} · ${hands ? hands.info : camStatus}\n${hint} · [V] aspect · [H] clean · [E] edit · [D] grid`;
 }
 
 // -------------------------------------------------------------
