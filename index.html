@@ -226,7 +226,7 @@
 
 <script type="module">
 import { oklch, formatRgb } from "./vendor/culori.min.mjs";
-import { startHands } from "./hands.js";
+import { startHands } from "./hands.js?v=3";
 
 // Дефолтный список в формате «категория / деталь»
 const DEFAULT_WORDS_RAW = `архитектура / эркер
@@ -799,9 +799,15 @@ function toScene(nx, ny) {
 
 async function startCamera() {
   if (hands) return;
-  camStatus = "camera: loading…";
+  camStatus = "camera: starting…";
+  updateHud();
   try {
-    hands = await startHands(video, { toScene, onClose: p => grab(p, performance.now()), onOpen: p => release(p, performance.now()) });
+    hands = await startHands(video, {
+      toScene,
+      onClose: p => grab(p, performance.now()),
+      onOpen: p => release(p, performance.now()),
+      onStatus: s => { camStatus = s; updateHud(); },
+    });
     small.width = trail.width = 128;
     small.height = trail.height = Math.round(128 * video.videoHeight / video.videoWidth);
     if ("filter" in smallCtx) smallCtx.filter = VIDEO_FILTER; // Safari: останется цветной растянутый маленький кадр
@@ -810,7 +816,7 @@ async function startCamera() {
   } catch (err) {
     console.warn(err);
     if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
-      camStatus = "camera blocked — allow for this site";
+      camStatus = "camera blocked — lock icon → allow camera → reload";
     } else if (err?.name === "NotFoundError") {
       camStatus = "no camera found — mouse fallback";
     } else {

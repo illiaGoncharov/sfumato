@@ -51,17 +51,21 @@ async function createLandmarker(vision) {
   }
 }
 
-export async function startHands(video, { toScene, onClose, onOpen }) {
+export async function startHands(video, { toScene, onClose, onOpen, onStatus }) {
+  const status = s => { if (onStatus) onStatus(s); };
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error("Camera needs HTTPS or localhost");
   }
+  status("camera: allow in browser prompt…");
   video.srcObject = await navigator.mediaDevices.getUserMedia({
     video: { width: 1280, height: 720, facingMode: "user" },
   });
   await video.play();
 
+  status("camera: loading hand model…");
   const vision = await FilesetResolver.forVisionTasks(WASM_DIR);
   const landmarker = await createLandmarker(vision);
+  status("camera: on");
 
   // По одному указателю на руку: невидимый круг в центре ладони. Тянет слова, пока рука открыта
   const pointers = Array.from({ length: 2 }, (_, i) => ({
