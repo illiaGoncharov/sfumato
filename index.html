@@ -100,16 +100,18 @@
     pointer-events: none;
   }
   .title {
-    font-size: 13px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--muted);
-    text-shadow: 0 1px 4px #000;
     display: flex;
-    gap: 10px;
     align-items: center;
+    pointer-events: none;
   }
-  .title b { color: var(--text); font-weight: 500; }
+  .title-mark {
+    font-size: 12px;
+    font-weight: 400;
+    font-style: italic;
+    letter-spacing: 0.05em;
+    color: rgba(232, 238, 250, 0.62);
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.65);
+  }
   .badge-btn {
     pointer-events: auto;
     background: var(--panel-bg);
@@ -226,7 +228,7 @@
 
   <div class="top-bar">
     <div class="title">
-      <b>sfumato</b>
+      <span class="title-mark">sfumato</span>
     </div>
     <div class="toolbar">
       <button class="badge-btn" id="btnAspect" title="Shortcut: V">9:16 [V]</button>
