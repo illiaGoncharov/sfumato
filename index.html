@@ -80,7 +80,7 @@
   @media (max-width: 520px) {
     .top-bar .title { display: none; }
     .badge-btn { font-size: 10px; padding: 5px 8px; }
-    #hud { left: 8px; right: 8px; font-size: 10px; white-space: pre-wrap; }
+    #hud { font-size: 10px; padding: 7px 9px; }
   }
   canvas {
     display: block;
@@ -127,17 +127,32 @@
     border-color: rgba(255, 255, 255, 0.3);
     background: rgba(25, 30, 42, 0.95);
   }
-  /* HUD оверлей (отладка) */
+  /* HUD — статус и подсказки поверх сцены */
   #hud {
     position: absolute;
     bottom: 12px;
-    left: 16px;
+    left: 12px;
+    right: 12px;
     font-size: 11px;
-    color: var(--muted);
-    white-space: pre;
+    color: var(--text);
     pointer-events: none;
-    line-height: 1.4;
-    text-shadow: 0 1px 3px #000;
+    line-height: 1.45;
+    background: rgba(8, 10, 14, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    padding: 8px 10px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 6px 28px rgba(0, 0, 0, 0.55);
+  }
+  #stage.vertical #hud {
+    bottom: max(48px, 12%);
+    left: 10px;
+    right: 10px;
+  }
+  .hud-line + .hud-line {
+    margin-top: 4px;
+    color: rgba(232, 238, 250, 0.72);
+    font-size: 0.95em;
   }
   /* Модальное окно редактора слов */
   #modal {
@@ -221,7 +236,10 @@
     </div>
   </div>
 
-  <div id="hud">fps: -- · mouse active · [C] camera · [D] grid</div>
+  <div id="hud">
+    <div class="hud-line" id="hudStatus">fps — · mouse · [C] cam</div>
+    <div class="hud-line" id="hudHints">open · fist · release · mouse hold · [V] [H] [E] [D]</div>
+  </div>
 
   <!-- Редактор слов (модалка) -->
   <div id="modal">
@@ -336,6 +354,8 @@ function parseWords(text) {
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const hud = document.getElementById("hud");
+const hudStatus = document.getElementById("hudStatus");
+const hudHints = document.getElementById("hudHints");
 
 // Логический размер сцены: 16:9 (960x540) или 9:16 (540x960), внутренний x2 Retina
 let WIDTH = 960;
@@ -1027,10 +1047,10 @@ function drawSafeGrid(ctx) {
 }
 
 function updateHud() {
-  const hint = hands
-    ? "open hand collects · fist holds · release = burst"
-    : "open hand collects · fist holds · release = burst · mouse: hold & release";
-  hud.textContent = `fps: ${currentFps} · words: ${words.length} · ${hands ? hands.info : camStatus}\n${hint} · [V] aspect · [H] clean · [E] edit · [D] grid`;
+  hudStatus.textContent = `fps ${currentFps} · words ${words.length} · ${hands ? hands.info : camStatus}`;
+  const gesture = hands ? "open · fist · release" : "open · fist · release · mouse hold";
+  const keys = isVertical ? "[V] [H] [E]" : "[V] [H] [E] [D]";
+  hudHints.textContent = `${gesture} · ${keys}`;
 }
 
 // -------------------------------------------------------------
@@ -1059,6 +1079,7 @@ function setAspect(vertical) {
     w.y = Math.min(Math.max(w.y, 50), HEIGHT - 50);
   });
   if (mouse) { mouse.x = WIDTH / 2; mouse.y = HEIGHT / 2; }
+  updateHud();
 }
 
 window.toggleClean = toggleClean;
