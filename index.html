@@ -1,0 +1,1069 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>sfumato · sandbox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0d12;
+    --text: #e8eefa;
+    --muted: #8b8982;
+    --accent: #e8eefa;
+    --panel-bg: rgba(15, 18, 24, 0.88);
+    --border: rgba(255, 255, 255, 0.1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "IBM Plex Mono", monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+  #stage {
+    position: relative;
+    width: 960px;
+    height: 540px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border);
+    background: radial-gradient(ellipse at 50% 50%, #121620 0%, #08090d 100%);
+    transition: width 0.25s ease, height 0.25s ease, box-shadow 0.25s ease;
+  }
+  #stage.vertical {
+    width: 382px;
+    height: 680px;
+  }
+  #stage.clean {
+    box-shadow: none;
+    border-color: transparent;
+  }
+  #stage.clean canvas {
+    cursor: none;
+  }
+  #stage.clean .top-bar,
+  #stage.clean #hud {
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+  #stage.vertical .title {
+    display: none;
+  }
+  #stage.vertical .top-bar {
+    justify-content: flex-end;
+  }
+  .top-bar, #hud {
+    transition: opacity 0.25s ease;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+  }
+  /* Верхняя плашка управления */
+  .top-bar {
+    position: absolute;
+    top: 12px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: none;
+  }
+  .title {
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-shadow: 0 1px 4px #000;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .title b { color: var(--text); font-weight: 500; }
+  .badge-btn {
+    pointer-events: auto;
+    background: var(--panel-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    backdrop-filter: blur(8px);
+  }
+  .badge-btn:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(25, 30, 42, 0.95);
+  }
+  /* HUD оверлей (отладка) */
+  #hud {
+    position: absolute;
+    bottom: 12px;
+    left: 16px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: pre;
+    pointer-events: none;
+    line-height: 1.4;
+    text-shadow: 0 1px 3px #000;
+  }
+  /* Модальное окно редактора слов */
+  #modal {
+    position: absolute;
+    inset: 0;
+    background: rgba(8, 10, 14, 0.75);
+    backdrop-filter: blur(12px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  #modal.open { display: flex; }
+  .modal-card {
+    width: 520px;
+    max-height: 480px;
+    background: #11141c;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8);
+  }
+  .modal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .modal-head h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .modal-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin: 0;
+  }
+  textarea {
+    width: 100%;
+    height: 240px;
+    background: #090b0f;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font: 12px/1.5 "IBM Plex Mono", monospace;
+    padding: 10px;
+    resize: vertical;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--accent); }
+  .modal-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .foot-btns { display: flex; gap: 8px; }
+</style>
+<script src="./vendor/d3-delaunay.min.js"></script>
+</head>
+<body>
+
+<video id="cam" playsinline muted style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></video>
+
+<div id="stage">
+  <canvas id="canvas" width="1920" height="1080"></canvas>
+
+  <div class="top-bar">
+    <div class="title">
+      <b>sfumato</b> · срез 2: камера
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="badge-btn" id="btnAspect" title="Горячая клавиша: V">▯ 9:16 [V]</button>
+      <button class="badge-btn" id="btnClean" title="Горячая клавиша: H">👁 скрыть UI [H]</button>
+      <button class="badge-btn" id="btnCam" title="Горячая клавиша: C">◉ камера [C]</button>
+      <button class="badge-btn" id="btnEdit" title="Горячая клавиша: E">✎ слова [E]</button>
+    </div>
+  </div>
+
+  <div id="hud">fps: -- · d: сетка 3:4 · мышь активна</div>
+
+  <!-- Редактор слов (модалка) -->
+  <div id="modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>Слова и пары</h3>
+        <button class="badge-btn" id="btnClose">✕ Esc</button>
+      </div>
+      <p class="modal-sub">Формат: «категория / деталь» (по одной паре на строку)</p>
+      <textarea id="wordsText" spellcheck="false"></textarea>
+      <div class="modal-foot">
+        <button class="badge-btn" id="btnReset">Сброс к дефолту</button>
+        <div class="foot-btns">
+          <button class="badge-btn" id="btnSave" style="background:#203428; border-color:#3a6549;">Сохранить [Enter]</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { oklch, formatRgb } from "./vendor/culori.min.mjs";
+import { startHands } from "./hands.js";
+
+// Дефолтный список в формате «категория / деталь»
+const DEFAULT_WORDS_RAW = `архитектура / эркер
+звук / гитарный wah-wah
+живопись / сфумато
+город / дворы-колодцы
+текстура / облупленная штукатурка
+код / шейдерный шум
+память / плёночное зерно
+свет / тёплый абажур
+типографика / моноширинный штрих
+ритм / синкопированный бит
+вечер / синий час
+пространство / анфилада
+материя / шероховатый картон
+оптика / рассеянный фокус
+жест / траектория пальца
+жест / раскрытая ладонь
+цвет / приглушённый шафран
+тишина / гул трансформатора
+форма / мягкий многоугольник
+внимание / расплывчатый край
+запах / мокрый асфальт
+звук / щелчок выключателя
+свет / полоса из-под двери
+город / ночной трамвай
+тепло / батарея под ладонью
+вкус / холодный кофе
+вода / капли по подоконнику
+окно / запотевшее стекло
+тело / усталые плечи
+стена / обои в цветочек
+дорога / пустой перрон
+ветер / шорох занавески
+музыка / далёкое радио
+время / замедленные часы
+утро / сизая дымка
+бумага / мятый чек
+кожа / мурашки
+взгляд / отражение в витрине
+сон / недосказанная фраза
+тишина / дыхание в наушниках`;
+
+const INK = "232, 238, 250"; // единственный нейтральный холодно-белый для всего интерфейса; цвет несут только слова
+const STORAGE_KEY = "sfumato_words_v2";
+const RING = 70;        // радиус кольца вокруг указателя, где слова «зависают»
+const MAX_SPEED = 30;   // потолок скорости (нужен для взрыва; обычная скорость мала из-за мягких сил)
+const FRICTION = 0.93;  // трение: выше = плавнее, но дольше «плывут»
+const K_HOME = 0.0014;  // жёсткость пружины к дому
+const K_CURSOR = 0.0026; // сила притяжения к курсору
+const K_ORBIT = 0.05;   // закрутка вокруг руки (разная у каждого слова)
+const FLOW = 0.02;      // сила плавного потока, в котором слова плывут сами
+const K_KIN = 0.004;    // притяжение слов близкого цвета друг к другу
+const LABELS_FOCUS = 3; // сколько слов у руки подписано полностью
+const LABELS_NEAR = 6;  // сколько слов у руки подписано вообще
+const GRAIN = 0.07;     // сила зерна плёнки поверх сцены (0 выключает)
+const VIDEO_FILTER = "grayscale(1) contrast(1.9) brightness(1.15) blur(1.5px)"; // чёрно-белое контрастное видео
+const VIDEO_DELAY_MS = 220; // «замедление»: видео усредняется во времени, движение тянется шлейфом (0 выключает)
+const VIDEO_GRAIN = 0.28;  // шум прямо на видео
+const VIDEO_DIM = 0.35;    // затемнение видео под слова (меньше = белее и контрастнее)
+const ZONES = 5;        // число цветовых зон
+const HOLD_WORDS = 3;   // сколько слов рука удерживает в кулаке
+const HOLD_LIFT = 90;   // на сколько выше кулака висит строка
+const BURST = 34;       // сила взрыва при раскрытии руки (слова из кулака летят в 1.8 раза сильнее)
+const BURST_FREE_MS = 1200; // сколько слова летят свободно, потом возвращаются
+const GAP = 8;          // зазор между подписями
+
+function loadRawWords() {
+  return localStorage.getItem(STORAGE_KEY) || DEFAULT_WORDS_RAW;
+}
+
+function parseWords(text) {
+  return text
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const parts = line.split("/").map(s => s.trim());
+      return {
+        category: parts[0] || "",
+        detail: parts[1] || parts[0] || ""
+      };
+    });
+}
+
+// -------------------------------------------------------------
+// Холст, сцена и масштаб
+// -------------------------------------------------------------
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const hud = document.getElementById("hud");
+
+// Логический размер сцены: 16:9 (960x540) или 9:16 (540x960), внутренний x2 Retina
+let WIDTH = 960;
+let HEIGHT = 540;
+let isVertical = false;
+let isClean = false;
+const SCALE = 2; // для чёткого рендера шрифтов
+
+// -------------------------------------------------------------
+// Единый слой ввода (pointers)
+// Мышь и кончики пальцев (пальцы добавляются после включения камеры)
+// -------------------------------------------------------------
+const mouse = { id: "mouse", pull: true, closed: false, x: WIDTH / 2, y: HEIGHT / 2, active: false, radius: 230, fade: 1 };
+let pointers = [mouse];
+
+// -------------------------------------------------------------
+// Узлы (слова-пятна)
+// -------------------------------------------------------------
+class WordNode {
+  constructor(category, detail, index, total) {
+    this.category = category;
+    this.detail = detail;
+
+    // Палитра OKLCH: одинаковая светлота L=0.74 и сдержанная хрома C=0.11
+    // Гармоничный разброс цветового тона (hue) по ленте (тёплые, шафран, синий, мята)
+    const hueBase = (index / Math.max(1, total)) * 360;
+
+    this.phase = Math.random() * Math.PI * 2; // фаза медленного «дыхания»
+    this.recalcHome(index, total);
+    this.x = this.hx;
+    this.y = this.hy;
+    this.vx = 0;
+    this.vy = 0;
+    this.freeUntil = 0; // до этого момента слово игнорирует тягу к дому (после взрыва)
+
+    // Характер: у каждого слова своя дистанция до руки, охота идти и направление закрутки
+    this.hue = hueBase;
+    this.ring = RING * (0.6 + Math.random() * 1.4);
+    this.eager = 0.6 + Math.random() * 0.9;
+    this.spin = (Math.random() - 0.5) * 2;
+    this.rank = 99; // место по близости к руке (считается каждый кадр)
+    this.slot = null; // место в строке, когда слова «сложились»
+    this.colorRgb = formatRgb(oklch({ l: 0.74, c: 0.11, h: hueBase }));
+    this.dotRgb = formatRgb(oklch({ l: 0.85, c: 0.08, h: hueBase }));
+
+    this.dist = 9999;        // расстояние до ближайшего указателя
+    this.level = 3;          // 1: фокус (оба слова), 2: рядом (только деталь), 3: фон (точка)
+    this.focusFactor = 0;    // плавный переход 0..1 для анимации
+  }
+
+  recalcHome(index, total) {
+    const hueBase = (index / Math.max(1, total)) * 360;
+    const zone = Math.floor(hueBase / (360 / ZONES));
+    const angle = (zone / ZONES) * Math.PI * 2 - Math.PI / 2;
+    const r = Math.random() * (40 + 8 * total / ZONES);
+    const a = Math.random() * Math.PI * 2;
+    const rx = WIDTH * 0.32;
+    const ry = HEIGHT * 0.32;
+    this.hx = WIDTH / 2 + Math.cos(angle) * rx + Math.cos(a) * r;
+    this.hy = HEIGHT / 2 + Math.sin(angle) * ry + Math.sin(a) * r * 0.7;
+  }
+
+  update(active, now) {
+    this.x += this.vx;
+    this.y += this.vy;
+    // Мягкий отскок от краёв
+    if (this.x < 50) { this.x = 50; this.vx *= -0.5; }
+    if (this.x > WIDTH - 50) { this.x = WIDTH - 50; this.vx *= -0.5; }
+    if (this.y < 40) { this.y = 40; this.vy *= -0.5; }
+    if (this.y > HEIGHT - 40) { this.y = HEIGHT - 40; this.vy *= -0.5; }
+
+    // Слово в строке: пружина к своему месту, остальные силы выключены
+    if (this.slot) {
+      this.vx = (this.vx + (this.slot.x - this.x) * 0.03) * 0.8;
+      this.vy = (this.vy + (this.slot.y - this.y) * 0.03) * 0.8;
+      this.dist = 0;
+      this.level = 1;
+      this.focusFactor += (1 - this.focusFactor) * 0.12;
+      return;
+    }
+
+    // Сила притяжения к курсору (0..1): растёт плавно по мере приближения
+    let cursorW = 0;
+    let near = null;
+    this.dist = 9999;
+    for (const p of active) {
+      const d = Math.hypot(p.x - this.x, p.y - this.y) || 1;
+      if (d < this.dist) { this.dist = d; near = p; }
+    }
+    if (near) {
+      const dx = near.x - this.x;
+      const dy = near.y - this.y;
+      if (this.dist < near.radius) {
+        const k = 1 - this.dist / near.radius;
+        cursorW = k * k * (3 - 2 * k); // smoothstep
+        // К своему кольцу вокруг руки: ближе кольца отталкивает; плюс закрутка по орбите
+        const pull = (this.dist - this.ring) * K_CURSOR * this.eager * cursorW;
+        this.vx += (dx / this.dist) * pull - (dy / this.dist) * this.spin * K_ORBIT * cursorW;
+        this.vy += (dy / this.dist) * pull + (dx / this.dist) * this.spin * K_ORBIT * cursorW;
+      }
+    }
+
+    // Плавный поток: слова всегда медленно плывут, даже без руки
+    this.vx += Math.sin(this.y * 0.012 + now * 0.0004 + this.phase) * FLOW;
+    this.vy += Math.cos(this.x * 0.010 - now * 0.0003 + this.phase) * FLOW;
+
+    // Тяга к своему дому (цвет и зона) с медленным «дыханием»; слабеет рядом с курсором и после взрыва
+    if (now > this.freeUntil) {
+      const tx = this.hx + Math.sin(now * 0.0004 + this.phase) * 14;
+      const ty = this.hy + Math.cos(now * 0.0003 + this.phase) * 10;
+      const homeW = 1 - cursorW;
+      this.vx += (tx - this.x) * K_HOME * homeW;
+      this.vy += (ty - this.y) * K_HOME * homeW;
+    }
+
+    // Трение и потолок скорости
+    this.vx *= FRICTION;
+    this.vy *= FRICTION;
+    const speed = Math.hypot(this.vx, this.vy);
+    if (speed > MAX_SPEED) { this.vx *= MAX_SPEED / speed; this.vy *= MAX_SPEED / speed; }
+
+    // Определение уровня внимания (Art Director: 3 уровня иерархии)
+    // Бюджет внимания: подписаны только несколько ближайших к руке слов, остальные точки
+    let targetFocus = 0;
+    if (this.rank < LABELS_FOCUS && this.dist < 130) targetFocus = 1;
+    else if (this.rank < LABELS_NEAR && this.dist < 200) targetFocus = 0.5;
+    this.level = targetFocus === 1 ? 1 : targetFocus ? 2 : 3;
+
+    // Плавная интерполяция фокуса
+    this.focusFactor += (targetFocus - this.focusFactor) * 0.12;
+  }
+
+  // Рамка подписи для столкновений: ширина растёт вместе с фокусом (моноширинный шрифт ~6.6px на символ)
+  get box() {
+    if (this.slot) return { w: this.detail.length * 9.6 + 28, h: 24 };
+    const w = this.detail.length * 6.6 + 14 + this.focusFactor * (this.category.length + 3) * 6;
+    return { w, h: 18 };
+  }
+
+  drawGlow(ctx) {
+    // Мягкое свечение-пятно (режим screen/source-over с низкой альфой)
+    const radius = 24 + this.focusFactor * 32;
+    const alpha = 0.06 + this.focusFactor * 0.1;
+
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, radius);
+    grad.addColorStop(0, this.colorRgb.replace("rgb(", "rgba(").replace(")", `, ${alpha})`));
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  drawLabel(ctx) {
+    // Слово в строке: чистый текст со свечением, без плашки
+    if (this.slot) {
+      ctx.save();
+      ctx.globalAlpha = this.slot.alpha;
+      ctx.font = "500 16px 'IBM Plex Mono', monospace";
+      ctx.textAlign = "center";
+      ctx.shadowColor = `rgba(${INK}, 0.7)`;
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = "#fff";
+      ctx.fillText(this.detail, this.x, this.y + 5);
+      ctx.restore();
+      return;
+    }
+
+    // 3 уровня типографики
+    if (this.level === 3 && this.focusFactor < 0.1) {
+      // Уровень 3: Фон — просто деликатная мерцающая точка
+      ctx.fillStyle = this.dotRgb.replace("rgb(", "rgba(").replace(")", ", 0.4)");
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+
+    // Подложка для гарантированной читаемости над любым фоном (Art Director)
+    const isFocus = this.focusFactor > 0.65;
+    const textMain = this.detail;
+    const textSub = isFocus ? this.category : "";
+
+    ctx.font = isFocus
+      ? "500 12px 'IBM Plex Mono', monospace"
+      : "400 11px 'IBM Plex Mono', monospace";
+
+    const mainWidth = ctx.measureText(textMain).width;
+    let totalWidth = mainWidth;
+    let subWidth = 0;
+
+    if (textSub) {
+      ctx.font = "400 10px 'IBM Plex Mono', monospace";
+      subWidth = ctx.measureText(textSub + " · ").width;
+      totalWidth += subWidth;
+    }
+
+    const padX = 7;
+    const padY = 4;
+    const badgeW = totalWidth + padX * 2;
+    const badgeH = 18;
+    const badgeX = this.x - badgeW / 2;
+    const badgeY = this.y - badgeH / 2;
+
+    // Тёмный мягкий бейдж
+    const badgeAlpha = 0.55 + this.focusFactor * 0.35;
+    ctx.fillStyle = `rgba(11, 14, 20, ${badgeAlpha})`;
+    ctx.strokeStyle = isFocus ? "rgba(255, 255, 255, 0.22)" : "rgba(255, 255, 255, 0.08)";
+    ctx.lineWidth = 1;
+
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    // Текст внутри бейджа
+    let curX = badgeX + padX;
+    const textY = this.y + 3.5;
+
+    if (textSub) {
+      ctx.font = "400 10px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = `rgba(${INK}, 0.55)`;
+      ctx.fillText(textSub + " · ", curX, textY);
+      curX += subWidth;
+    }
+
+    ctx.font = isFocus
+      ? "500 12px 'IBM Plex Mono', monospace"
+      : "400 11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = isFocus ? "#ffffff" : `rgba(${INK}, 0.85)`;
+    ctx.fillText(textMain, curX, textY);
+  }
+}
+
+// -------------------------------------------------------------
+// Инициализация симуляции
+// -------------------------------------------------------------
+let words = [];
+
+function rebuildWords(rawText) {
+  const parsed = parseWords(rawText);
+  words = parsed.map((item, idx) => new WordNode(item.category, item.detail, idx, parsed.length));
+}
+
+rebuildWords(loadRawWords());
+
+// Мягкое расталкивание рамок: слова «баблятся» друг о друга, но не перекрываются
+function separate(nodes) {
+  for (let i = 0; i < nodes.length; i++) {
+    const a = nodes[i], ba = a.box;
+    for (let j = i + 1; j < nodes.length; j++) {
+      const b = nodes[j], bb = b.box;
+      const dx = b.x - a.x, dy = b.y - a.y;
+
+      // Слова близкого цвета слабо тянутся друг к другу: сами собираются в созвездия
+      const d = Math.hypot(dx, dy) || 1;
+      const dh = Math.abs(a.hue - b.hue);
+      if (d < 220 && Math.min(dh, 360 - dh) < 50) {
+        const f = K_KIN * (1 - d / 220);
+        a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+        b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+      }
+
+      const ox = (ba.w + bb.w) / 2 + GAP - Math.abs(dx);
+      const oy = (ba.h + bb.h) / 2 + GAP - Math.abs(dy);
+      if (ox <= 0 || oy <= 0 || (a.slot && b.slot)) continue;
+      // Слова строки не двигаем: уступает второе слово
+      const ma = a.slot ? 0 : b.slot ? 2 : 1;
+      const mb = b.slot ? 0 : a.slot ? 2 : 1;
+      // Двигаем по оси с меньшим перекрытием, плавно (24% за кадр)
+      if (oy < ox) {
+        const s = Math.sign(dy || Math.random() - 0.5) * oy * 0.12;
+        a.y -= s * ma; b.y += s * mb;
+      } else {
+        const s = Math.sign(dx || Math.random() - 0.5) * ox * 0.12;
+        a.x -= s * ma; b.x += s * mb;
+      }
+    }
+  }
+}
+
+// -------------------------------------------------------------
+// Созвездия Delaunay между близкими активными узлами
+// -------------------------------------------------------------
+function drawConstellations(ctx, activeNodes, active) {
+  if (activeNodes.length < 2) return;
+
+  // Точки для триангуляции: активные указатели + слова рядом с ними
+  const points = active.map(p => [p.x, p.y]);
+  for (const n of activeNodes) {
+    points.push([n.x, n.y]);
+  }
+
+  if (points.length < 3) return;
+
+  try {
+    const delaunay = window.d3.Delaunay.from(points);
+    const { halfedges, points: p } = delaunay;
+
+    ctx.strokeStyle = `rgba(${INK}, 0.14)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+
+    for (let i = 0; i < halfedges.length; i++) {
+      if (halfedges[i] > i) {
+        const p1 = i * 2;
+        const p2 = halfedges[i] * 2;
+        const x1 = p[p1], y1 = p[p1 + 1];
+        const x2 = p[p2], y2 = p[p2 + 1];
+
+        // Ограничиваем длину рёбер, чтобы не перегружать экран
+        const dist = Math.hypot(x2 - x1, y2 - y1);
+        if (dist < 130) {
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+        }
+      }
+    }
+    ctx.stroke();
+  } catch (err) {
+    // Безопасный фоллбэк при редких вырожденных координатах
+  }
+}
+
+// -------------------------------------------------------------
+// Мышь / события сцены
+// -------------------------------------------------------------
+const rect = () => stage.getBoundingClientRect();
+const stage = document.getElementById("stage");
+
+stage.addEventListener("mousemove", e => {
+  const r = rect();
+  mouse.x = (e.clientX - r.left) * (WIDTH / r.width);
+  mouse.y = (e.clientY - r.top) * (HEIGHT / r.height);
+  mouse.active = true;
+});
+
+stage.addEventListener("mouseleave", () => {
+  mouse.active = false;
+});
+
+// -------------------------------------------------------------
+// Захват: открытая рука собирает слова, кулак удерживает три из них строкой,
+// раскрытие взрывает. Мышь ведёт себя так же: зажатая кнопка = кулак
+// -------------------------------------------------------------
+const holds = new Map(); // указатель -> { words, t0, row }
+
+function grab(p, now) {
+  if (holds.has(p)) return;
+  const d = w => Math.hypot(w.x - p.x, w.y - p.y);
+  const near = words.filter(w => !w.slot && d(w) < p.radius).sort((a, b) => d(a) - d(b)).slice(0, HOLD_WORDS);
+  if (!near.length) return;
+  near.sort((a, b) => a.x - b.x); // строка читается слева направо
+  near.forEach(w => { w.slot = { x: w.x, y: w.y, alpha: 0.3 }; });
+  holds.set(p, { words: near, t0: now });
+}
+
+// Раскрытие: держимые слова отпускаются и взрываются вместе со всеми
+function release(p, now) {
+  const held = holds.get(p)?.words ?? [];
+  holds.delete(p);
+  for (const w of held) { w.slot = null; w.freeUntil = now + BURST_FREE_MS; }
+  burst(p.x, p.y, held);
+}
+
+// Строка висит над кулаком и следует за рукой
+function layoutHolds(now) {
+  for (const [p, h] of holds) {
+    if (!p.active) { // рука пропала из кадра: слова просто отпускаем
+      for (const w of h.words) { w.slot = null; w.freeUntil = now + 700; }
+      holds.delete(p);
+      continue;
+    }
+    const widths = h.words.map(w => w.detail.length * 9.6 + 28);
+    const total = widths.reduce((s, w) => s + w, 0);
+    const cx = Math.min(Math.max(p.x, total / 2 + 30), WIDTH - total / 2 - 30);
+    const y = Math.min(Math.max(p.y - HOLD_LIFT, 50), HEIGHT - 50);
+    const alpha = 0.3 + 0.7 * Math.min(1, (now - h.t0) / 400);
+    let x = cx - total / 2;
+    h.words.forEach((w, i) => { w.slot = { x: x + widths[i] / 2, y, alpha }; x += widths[i]; });
+    h.row = { x0: cx - total / 2, x1: cx + total / 2, y, alpha };
+  }
+}
+
+// Зерно плёнки: один раз генерируем шум, каждый кадр сдвигаем случайно
+const grain = document.createElement("canvas");
+grain.width = grain.height = 256;
+{
+  const g = grain.getContext("2d"), img = g.createImageData(256, 256);
+  for (let i = 0; i < img.data.length; i += 4) {
+    img.data.fill(Math.random() < 0.5 ? 0 : 255, i, i + 3);
+    img.data[i + 3] = Math.random() * 255;
+  }
+  g.putImageData(img, 0, 0);
+}
+let grainPattern = ctx.createPattern(grain, "repeat");
+
+// Зерно в пикселях экрана (без масштаба Retina), каждый раз со случайным сдвигом
+function drawGrain(alpha) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, -(Math.random() * 256 | 0), -(Math.random() * 256 | 0));
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = grainPattern;
+  ctx.fillRect(0, 0, canvas.width + 256, canvas.height + 256);
+  ctx.restore();
+}
+
+// Взрыв: все слова разлетаются от точки, потом возвращаются домой; слова из кулака летят сильнее
+let pulse = null; // кольцо-вспышка
+function burst(x, y, held = []) {
+  const now = performance.now();
+  for (const w of words) {
+    const angle = Math.atan2(w.y - y, w.x - x) + (Math.random() - 0.5) * 1.2;
+    const power = BURST * (0.6 + Math.random() * 0.8) / (1 + Math.hypot(w.x - x, w.y - y) / 500) * (held.includes(w) ? 1.8 : 1);
+    w.vx += Math.cos(angle) * power;
+    w.vy += Math.sin(angle) * power;
+    w.freeUntil = now + BURST_FREE_MS * (0.7 + Math.random() * 0.6);
+  }
+  pulse = { x, y, t: now };
+}
+
+// Мышь: зажать = сжать кулак, отпустить = раскрыть
+stage.addEventListener("mousedown", e => {
+  if (e.target.closest("button, #modal")) return;
+  mouse.closed = true;
+  mouse.pull = false;
+  grab(mouse, performance.now());
+});
+window.addEventListener("mouseup", () => {
+  if (!mouse.closed) return;
+  mouse.closed = false;
+  mouse.pull = true;
+  release(mouse, performance.now());
+});
+
+// -------------------------------------------------------------
+// Камера: размытая дымка на фоне
+// -------------------------------------------------------------
+const video = document.getElementById("cam");
+const small = document.createElement("canvas"); // маленький холст: растянутый, он даёт дымку
+const smallCtx = small.getContext("2d", { willReadFrequently: true });
+const trail = document.createElement("canvas"); // тот же кадр, усреднённый по времени
+const trailCtx = trail.getContext("2d");
+let acc = null; // усреднённый кадр в числах с плавающей точкой: на 8 битах полупрозрачные наложения оставляют призраков
+let trailT = 0;
+
+// Экспоненциальное усреднение: чем больше VIDEO_DELAY_MS, тем сильнее отстаёт и тянется картинка
+function blendTrail(now) {
+  const img = smallCtx.getImageData(0, 0, small.width, small.height);
+  const d = img.data;
+  acc ??= Float32Array.from(d);
+  const k = VIDEO_DELAY_MS ? 1 - Math.exp(-(now - trailT) / VIDEO_DELAY_MS) : 1;
+  trailT = now;
+  for (let i = 0; i < d.length; i += 4) {
+    for (let c = 0; c < 3; c++) d[i + c] = acc[i + c] += (d[i + c] - acc[i + c]) * k;
+  }
+  trailCtx.putImageData(img, 0, 0);
+}
+let hands = null;
+let camStatus = "камера: [C]";
+
+// Кадр на всю сцену: кроп cover + зеркало
+function drawCover(c, img, iw, ih) {
+  const s = Math.max(WIDTH / iw, HEIGHT / ih);
+  c.save();
+  c.translate(WIDTH, 0);
+  c.scale(-1, 1);
+  c.drawImage(img, (WIDTH - iw * s) / 2, (HEIGHT - ih * s) / 2, iw * s, ih * s);
+  c.restore();
+}
+
+// Нормализованные координаты кадра -> координаты сцены (то же преобразование, что и drawCover)
+function toScene(nx, ny) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const s = Math.max(WIDTH / vw, HEIGHT / vh);
+  return [WIDTH - ((nx * vw - vw / 2) * s + WIDTH / 2), (ny * vh - vh / 2) * s + HEIGHT / 2];
+}
+
+async function startCamera() {
+  if (hands) return;
+  camStatus = "камера: загрузка...";
+  try {
+    hands = await startHands(video, { toScene, onClose: p => grab(p, performance.now()), onOpen: p => release(p, performance.now()) });
+    small.width = trail.width = 128;
+    small.height = trail.height = Math.round(128 * video.videoHeight / video.videoWidth);
+    if ("filter" in smallCtx) smallCtx.filter = VIDEO_FILTER; // Safari: останется цветной растянутый маленький кадр
+    pointers = [mouse, ...hands.pointers];
+    btnCam.textContent = "◉ камера: вкл";
+  } catch (err) {
+    console.warn(err);
+    camStatus = "камера: нет доступа, работает мышь";
+  }
+}
+
+// Отладочная сетка 3:4 (безопасная зона для сетки профиля Instagram)
+let showDebug = false;
+
+window.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    if (modal.classList.contains("open")) { closeModal(); return; }
+    if (isClean) { toggleClean(false); return; }
+  }
+  if (e.key === "e" || e.key === "E" || e.key === "у" || e.key === "У") {
+    e.preventDefault();
+    openModal();
+  } else if (e.key === "d" || e.key === "D" || e.key === "в" || e.key === "В") {
+    showDebug = !showDebug;
+  } else if (e.key === "c" || e.key === "C" || e.key === "с" || e.key === "С") {
+    startCamera();
+  } else if (e.key === "v" || e.key === "V" || e.key === "м" || e.key === "М") {
+    setAspect(!isVertical);
+  } else if (e.key === "h" || e.key === "H" || e.key === "р" || e.key === "Р") {
+    toggleClean();
+  }
+});
+
+// -------------------------------------------------------------
+// Главный цикл рендеринга
+// -------------------------------------------------------------
+let lastTime = performance.now();
+let frameCount = 0;
+let currentFps = 60;
+
+function render(now) {
+  frameCount++;
+  if (now - lastTime >= 1000) {
+    currentFps = frameCount;
+    frameCount = 0;
+    lastTime = now;
+  }
+  if (frameCount % 6 === 0) updateHud();
+
+  hands?.update(now);
+  const active = pointers.filter(p => p.active);
+
+  // Масштаб под Retina 2x
+  ctx.save();
+  ctx.scale(SCALE, SCALE);
+
+  // Очистка кадра
+  ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+  // 0. Фон: размытая и притемнённая камера
+  if (hands) {
+    smallCtx.drawImage(video, 0, 0, small.width, small.height);
+    blendTrail(now);
+    drawCover(ctx, trail, trail.width, trail.height);
+    drawGrain(VIDEO_GRAIN);
+    ctx.fillStyle = `rgba(8, 9, 13, ${VIDEO_DIM})`;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  }
+
+  // 1. Обновление физики узлов: тянут только указатели с pull (указательный и средний пальцы, мышь)
+  const pullers = active.filter(p => p.pull);
+  for (const w of words) {
+    w.update(pullers, now);
+  }
+  separate(words);
+  [...words].sort((a, b) => a.dist - b.dist).forEach((w, i) => { w.rank = i; });
+  layoutHolds(now);
+
+  // 2. Слой созвездий (Delaunay) между указателями и словами рядом
+  const activeNodes = words.filter(w => w.dist < 220);
+  drawConstellations(ctx, activeNodes, pullers);
+
+  // 3. Свечение слов (мягкие пятна-лучи)
+  ctx.globalCompositeOperation = "screen";
+  for (const w of words) {
+    w.drawGlow(ctx);
+  }
+  ctx.globalCompositeOperation = "source-over";
+
+  // 4. Подписи слов (3 уровня)
+  for (const w of words) {
+    w.drawLabel(ctx);
+  }
+
+  // Строка в кулаке: мягкое сияние и тонкая линия под словами
+  for (const h of holds.values()) {
+    if (!h.row) continue;
+    const { x0, x1, y, alpha } = h.row, cx = (x0 + x1) / 2;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = "screen";
+    const glow = ctx.createRadialGradient(cx, y, 0, cx, y, (x1 - x0) * 0.6);
+    glow.addColorStop(0, `rgba(${INK}, 0.12)`);
+    glow.addColorStop(1, `rgba(${INK}, 0)`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = `rgba(${INK}, 0.35)`;
+    ctx.beginPath();
+    ctx.moveTo(x0, y + 18);
+    ctx.lineTo(x1, y + 18);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 5. Точки указателей (мышь / пальцы)
+  for (const p of pullers) {
+    if (!showDebug && p.hand) continue; // маркеры рук невидимы, видны по клавише D
+    ctx.fillStyle = `rgba(${INK}, ${0.9 * p.fade})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (mouse.active) {
+    // Нежный радиус влияния мыши
+    ctx.strokeStyle = `rgba(${INK}, 0.2)`;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, 85, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Кольцо-вспышка от клика
+  if (pulse) {
+    const k = (now - pulse.t) / 700;
+    if (k >= 1) pulse = null;
+    else {
+      ctx.strokeStyle = `rgba(${INK}, ${0.4 * (1 - k)})`;
+      ctx.beginPath();
+      ctx.arc(pulse.x, pulse.y, 20 + k * 260, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // Зерно поверх всего
+  if (GRAIN) drawGrain(GRAIN);
+
+  // 6. Сетка 3:4 (безопасная зона Instagram)
+  if (showDebug) {
+    drawSafeGrid(ctx);
+  }
+
+  ctx.restore();
+  requestAnimationFrame(render);
+}
+
+function drawSafeGrid(ctx) {
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 6]);
+
+  if (isVertical) {
+    // Безопасная зона Stories / Reels (отступы сверху и снизу под интерфейс Instagram)
+    const topSafe = HEIGHT * 0.14; // ~135px сверху (аватар, ник)
+    const bottomSafe = HEIGHT * 0.16; // ~150px снизу (поле ответа)
+    ctx.strokeRect(0, topSafe, WIDTH, HEIGHT - topSafe - bottomSafe);
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
+    ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.fillText("безопасная зона Stories (основной кадр)", 16, topSafe + 22);
+  } else {
+    // Центральный кроп 3:4 (высота 540 -> ширина 405)
+    const safeW = HEIGHT * (3 / 4);
+    const safeX = (WIDTH - safeW) / 2;
+    ctx.strokeRect(safeX, 0, safeW, HEIGHT);
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+    ctx.font = "10px 'IBM Plex Mono', monospace";
+    ctx.fillText("3:4 зона ленты Instagram", safeX + 8, 20);
+  }
+}
+
+function updateHud() {
+  hud.textContent = `fps: ${currentFps} · слов: ${words.length} · ${hands ? hands.info : camStatus}\nоткрытая рука собирает · кулак держит · раскрыть = взрыв (мышь: зажать и отпустить) · [V] 9:16 · [H] чистый вид · [E] слова · [D] сетка`;
+}
+
+// -------------------------------------------------------------
+// Модалка редактирования списка
+// -------------------------------------------------------------
+const modal = document.getElementById("modal");
+const wordsText = document.getElementById("wordsText");
+const btnAspect = document.getElementById("btnAspect");
+const btnClean = document.getElementById("btnClean");
+const btnEdit = document.getElementById("btnEdit");
+const btnCam = document.getElementById("btnCam");
+
+window.setAspect = setAspect;
+function setAspect(vertical) {
+  isVertical = vertical;
+  WIDTH = isVertical ? 540 : 960;
+  HEIGHT = isVertical ? 960 : 540;
+  canvas.width = WIDTH * SCALE;
+  canvas.height = HEIGHT * SCALE;
+  stage.classList.toggle("vertical", isVertical);
+  btnAspect.textContent = isVertical ? "▭ 16:9 [V]" : "▯ 9:16 [V]";
+  grainPattern = ctx.createPattern(grain, "repeat");
+  words.forEach((w, i) => {
+    w.recalcHome(i, words.length);
+    w.x = Math.min(Math.max(w.x, 60), WIDTH - 60);
+    w.y = Math.min(Math.max(w.y, 50), HEIGHT - 50);
+  });
+  if (mouse) { mouse.x = WIDTH / 2; mouse.y = HEIGHT / 2; }
+}
+
+window.toggleClean = toggleClean;
+function toggleClean(force) {
+  isClean = force !== undefined ? force : !isClean;
+  stage.classList.toggle("clean", isClean);
+  btnClean.textContent = isClean ? "👁 показать UI [H]" : "👁 скрыть UI [H]";
+}
+
+btnAspect.addEventListener("click", () => setAspect(!isVertical));
+btnClean.addEventListener("click", () => toggleClean());
+btnCam.addEventListener("click", startCamera);
+const btnClose = document.getElementById("btnClose");
+const btnSave = document.getElementById("btnSave");
+const btnReset = document.getElementById("btnReset");
+
+function openModal() {
+  wordsText.value = loadRawWords();
+  modal.classList.add("open");
+  wordsText.focus();
+}
+
+function closeModal() {
+  modal.classList.remove("open");
+}
+
+btnEdit.addEventListener("click", openModal);
+btnClose.addEventListener("click", closeModal);
+
+btnSave.addEventListener("click", () => {
+  const text = wordsText.value.trim();
+  if (text) {
+    localStorage.setItem(STORAGE_KEY, text);
+    rebuildWords(text);
+  }
+  closeModal();
+});
+
+btnReset.addEventListener("click", () => {
+  localStorage.removeItem(STORAGE_KEY);
+  wordsText.value = DEFAULT_WORDS_RAW;
+  rebuildWords(DEFAULT_WORDS_RAW);
+  closeModal();
+});
+
+// Запуск анимации
+requestAnimationFrame(render);
+</script>
+
+</body>
+</html>
