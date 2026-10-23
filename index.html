@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>sfumato · sandbox</title>
+<title>sfumato</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -193,31 +193,31 @@
 
   <div class="top-bar">
     <div class="title">
-      <b>sfumato</b> · срез 2: камера
+      <b>sfumato</b>
     </div>
     <div style="display:flex; gap:8px;">
-      <button class="badge-btn" id="btnAspect" title="Горячая клавиша: V">▯ 9:16 [V]</button>
-      <button class="badge-btn" id="btnClean" title="Горячая клавиша: H">👁 скрыть UI [H]</button>
-      <button class="badge-btn" id="btnCam" title="Горячая клавиша: C">◉ камера [C]</button>
-      <button class="badge-btn" id="btnEdit" title="Горячая клавиша: E">✎ слова [E]</button>
+      <button class="badge-btn" id="btnAspect" title="Shortcut: V">▯ 9:16 [V]</button>
+      <button class="badge-btn" id="btnClean" title="Shortcut: H">👁 hide UI [H]</button>
+      <button class="badge-btn" id="btnCam" title="Shortcut: C">◉ camera [C]</button>
+      <button class="badge-btn" id="btnEdit" title="Shortcut: E">✎ words [E]</button>
     </div>
   </div>
 
-  <div id="hud">fps: -- · d: сетка 3:4 · мышь активна</div>
+  <div id="hud">fps: -- · mouse active · [C] camera · [D] grid</div>
 
   <!-- Редактор слов (модалка) -->
   <div id="modal">
     <div class="modal-card">
       <div class="modal-head">
-        <h3>Слова и пары</h3>
+        <h3>Words</h3>
         <button class="badge-btn" id="btnClose">✕ Esc</button>
       </div>
-      <p class="modal-sub">Формат: «категория / деталь» (по одной паре на строку)</p>
+      <p class="modal-sub">One pair per line: <code>category / detail</code></p>
       <textarea id="wordsText" spellcheck="false"></textarea>
       <div class="modal-foot">
-        <button class="badge-btn" id="btnReset">Сброс к дефолту</button>
+        <button class="badge-btn" id="btnReset">Reset defaults</button>
         <div class="foot-btns">
-          <button class="badge-btn" id="btnSave" style="background:#203428; border-color:#3a6549;">Сохранить [Enter]</button>
+          <button class="badge-btn" id="btnSave" style="background:#203428; border-color:#3a6549;">Save [Enter]</button>
         </div>
       </div>
     </div>
@@ -778,7 +778,7 @@ function blendTrail(now) {
   trailCtx.putImageData(img, 0, 0);
 }
 let hands = null;
-let camStatus = "камера: [C]";
+let camStatus = "camera: press [C]";
 
 // Кадр на всю сцену: кроп cover + зеркало
 function drawCover(c, img, iw, ih) {
@@ -799,17 +799,17 @@ function toScene(nx, ny) {
 
 async function startCamera() {
   if (hands) return;
-  camStatus = "камера: загрузка...";
+  camStatus = "camera: loading…";
   try {
     hands = await startHands(video, { toScene, onClose: p => grab(p, performance.now()), onOpen: p => release(p, performance.now()) });
     small.width = trail.width = 128;
     small.height = trail.height = Math.round(128 * video.videoHeight / video.videoWidth);
     if ("filter" in smallCtx) smallCtx.filter = VIDEO_FILTER; // Safari: останется цветной растянутый маленький кадр
     pointers = [mouse, ...hands.pointers];
-    btnCam.textContent = "◉ камера: вкл";
+    btnCam.textContent = "◉ camera on";
   } catch (err) {
     console.warn(err);
-    camStatus = "камера: нет доступа, работает мышь";
+    camStatus = "camera denied — mouse fallback";
   }
 }
 
@@ -973,7 +973,7 @@ function drawSafeGrid(ctx) {
     ctx.setLineDash([]);
     ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
     ctx.font = "11px 'IBM Plex Mono', monospace";
-    ctx.fillText("безопасная зона Stories (основной кадр)", 16, topSafe + 22);
+    ctx.fillText("Stories safe area", 16, topSafe + 22);
   } else {
     // Центральный кроп 3:4 (высота 540 -> ширина 405)
     const safeW = HEIGHT * (3 / 4);
@@ -982,12 +982,12 @@ function drawSafeGrid(ctx) {
     ctx.setLineDash([]);
     ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
     ctx.font = "10px 'IBM Plex Mono', monospace";
-    ctx.fillText("3:4 зона ленты Instagram", safeX + 8, 20);
+    ctx.fillText("3:4 feed crop", safeX + 8, 20);
   }
 }
 
 function updateHud() {
-  hud.textContent = `fps: ${currentFps} · слов: ${words.length} · ${hands ? hands.info : camStatus}\nоткрытая рука собирает · кулак держит · раскрыть = взрыв (мышь: зажать и отпустить) · [V] 9:16 · [H] чистый вид · [E] слова · [D] сетка`;
+  hud.textContent = `fps: ${currentFps} · words: ${words.length} · ${hands ? hands.info : camStatus}\nopen hand collects · fist holds · release = burst · mouse: hold & release · [V] aspect · [H] clean · [E] edit · [D] grid`;
 }
 
 // -------------------------------------------------------------
@@ -1022,7 +1022,7 @@ window.toggleClean = toggleClean;
 function toggleClean(force) {
   isClean = force !== undefined ? force : !isClean;
   stage.classList.toggle("clean", isClean);
-  btnClean.textContent = isClean ? "👁 показать UI [H]" : "👁 скрыть UI [H]";
+  btnClean.textContent = isClean ? "👁 show UI [H]" : "👁 hide UI [H]";
 }
 
 btnAspect.addEventListener("click", () => setAspect(!isVertical));

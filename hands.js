@@ -87,7 +87,7 @@ export async function startHands(video, { toScene, onClose, onOpen }) {
   return {
     pointers,
     get info() {
-      return "ладони " + pointers.map(p => (p.seen ? p.ratio.toFixed(2) + (p.closed ? " кулак" : "") : "нет")).join(" | ");
+      return "hands " + pointers.map(p => (p.seen ? p.ratio.toFixed(2) + (p.closed ? " fist" : "") : "—")).join(" | ");
     },
     update(now) {
       if (video.readyState >= 2 && video.currentTime !== lastTime) {
