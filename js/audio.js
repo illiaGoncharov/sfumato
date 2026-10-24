@@ -8,7 +8,10 @@ if (!Tone) throw new Error("Load vendor/Tone.js before audio.js");
 
 /** Минорная пентатоника в D — спокойнее мажора, ближе к Insen */
 const SCALE = ["D3", "F3", "G3", "A3", "C4", "D4", "F4", "G4", "A4"];
-const isTouch = () => matchMedia("(pointer: coarse)").matches;
+const isTouch = () =>
+  matchMedia("(pointer: coarse)").matches
+  || /iPhone|iPad|iPod/i.test(navigator.userAgent)
+  || (navigator.maxTouchPoints > 0 && matchMedia("(max-width: 900px)").matches);
 let masterDb = -10;
 
 let ready = false;

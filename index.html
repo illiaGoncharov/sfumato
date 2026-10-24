@@ -470,6 +470,9 @@
     align-items: center;
   }
   .foot-btns { display: flex; gap: 8px; }
+  body.intro-open #stage {
+    pointer-events: none;
+  }
   #intro {
     position: fixed;
     inset: 0;
@@ -480,6 +483,8 @@
     background: rgba(6, 8, 12, 0.94);
     backdrop-filter: blur(14px);
     padding: 24px;
+    pointer-events: auto;
+    touch-action: manipulation;
   }
   #intro.hidden { display: none; }
   .intro-card {
@@ -503,7 +508,12 @@
     font-size: 12px;
     line-height: 1.55;
   }
-  .intro-card .badge-btn { width: 100%; padding: 12px; }
+  .intro-card .badge-btn {
+    width: 100%;
+    padding: 14px 12px;
+    min-height: 48px;
+    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
+  }
   #addPanel {
     position: absolute;
     left: 12px;
@@ -724,7 +734,7 @@ if (document.documentElement.classList.contains("touch-portrait")) {
 <script type="module">
 import { oklch, formatRgb } from "./vendor/culori.min.mjs";
 import { startHands } from "./js/hands.js?v=9";
-import { unlockAudioContext, startAudio, retryAudio, nudgeAudio, setMuted, isMuted, isAudioReady, updateAmbient, playChord, playBurst } from "./js/audio.js?v=14";
+import { unlockAudioContext, startAudio, retryAudio, nudgeAudio, setMuted, isMuted, isAudioReady, updateAmbient, playChord, playBurst } from "./js/audio.js?v=15";
 import {
   initWordsStore, loadLibraryRaw, replaceLibraryRaw, addWord, deleteWordAt,
   parseWords, isCloudEnabled, linkEmail,
@@ -1448,7 +1458,11 @@ async function startCamera() {
 let showDebug = false;
 
 function isPhoneUi() {
-  return window.matchMedia("(pointer: coarse)").matches;
+  return (
+    window.matchMedia("(pointer: coarse)").matches
+    || /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 0 && window.matchMedia("(max-width: 900px)").matches)
+  );
 }
 
 /** Строки HUD без клавиш — на телефоне [C] не нужен */
@@ -1462,7 +1476,7 @@ function hudCamLine(raw) {
 }
 
 function syncMuteButtonLabel() {
-  if (!btnMute) return;
+  if (!btnMute || !intro) return;
   if (!isPhoneUi()) {
     btnMute.textContent = isMuted() ? "sound off [M]" : "sound [M]";
     return;
@@ -1473,25 +1487,28 @@ function syncMuteButtonLabel() {
 
 async function enterApp(fromGesture) {
   const el = document.getElementById("intro");
-  if (el.classList.contains("hidden")) return;
+  if (!el || el.classList.contains("hidden")) return;
   unlockAudioContext();
-  // iPhone: полный Web Audio только после второго tap (enable sound / зелёная кнопка)
+  el.classList.add("hidden");
+  document.body.classList.remove("intro-open");
+  syncAudioGate();
+  syncMuteButtonLabel();
+  updateHud();
+  // Сначала закрываем intro; звук на телефоне — отдельным tap (enable sound)
   if (!isPhoneUi()) {
     try {
       await startAudio({ fromGesture });
     } catch (err) {
       console.warn("audio start failed", err);
     }
+    syncAudioGate();
+    updateHud();
   }
-  el.classList.add("hidden");
-  syncAudioGate();
-  syncMuteButtonLabel();
-  updateHud();
 }
 
 function syncAudioGate() {
   const gate = document.getElementById("audioGate");
-  const pastIntro = intro.classList.contains("hidden");
+  const pastIntro = intro?.classList.contains("hidden");
   gate.classList.toggle("show", isPhoneUi() && pastIntro && !isAudioReady() && !isMuted());
   syncMuteButtonLabel();
 }
@@ -1868,16 +1885,13 @@ addDetail.addEventListener("keydown", e => {
   if (e.key === "Escape") toggleAddPanel(false);
 });
 const btnStart = document.getElementById("btnStart");
-intro.addEventListener("touchstart", () => unlockAudioContext(), { passive: true });
-btnStart.addEventListener("touchstart", () => unlockAudioContext(), { passive: true });
-btnStart.addEventListener("touchend", e => {
+function onStartTap(e) {
   e.preventDefault();
+  unlockAudioContext();
   void enterApp(true);
-}, { passive: false });
-btnStart.addEventListener("click", e => {
-  if (e.pointerType === "touch") return;
-  void enterApp(true);
-});
+}
+btnStart?.addEventListener("touchstart", () => unlockAudioContext(), { passive: true });
+btnStart?.addEventListener("click", onStartTap);
 document.getElementById("audioGate").addEventListener("click", async () => {
   unlockAudioContext();
   await retryAudio();
@@ -1964,6 +1978,7 @@ window.addEventListener("orientationchange", () => {
 });
 
 async function boot() {
+  document.body.classList.add("intro-open");
   await initWordsStore();
   libraryRaw = await loadLibraryRaw(DEFAULT_WORDS_RAW);
   rebuildWords(libraryRaw);
