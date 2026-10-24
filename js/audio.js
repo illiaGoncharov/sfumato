@@ -30,10 +30,26 @@ let idleQuietUntil = 0;
 let lastBurstAudioAt = -1;
 /** Минимальный WAV — «разблокировка» медиа-сессии iOS до Web Audio */
 let iosUnlockEl;
+let contextWired = false;
 
 function hueToNote(hue) {
   const i = Math.floor(((hue % 360) / 360) * SCALE.length) % SCALE.length;
   return SCALE[i];
+}
+
+function contextRunning() {
+  const ctx = Tone?.getContext?.()?.rawContext;
+  return ctx?.state === "running";
+}
+
+function wireContextWatch() {
+  if (contextWired) return;
+  const ctx = Tone.getContext().rawContext;
+  if (!ctx) return;
+  contextWired = true;
+  ctx.addEventListener("statechange", () => {
+    if (ctx.state !== "running") ready = false;
+  });
 }
 
 function playIosMediaUnlock() {
@@ -50,6 +66,27 @@ function playIosMediaUnlock() {
   }
 }
 
+/** Короткий бип через raw Web Audio — в том же tap, что unlock (iOS) */
+function playGesturePing() {
+  if (!isTouch()) return;
+  try {
+    const ctx = Tone.getContext().rawContext;
+    if (!ctx || ctx.state !== "running") return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.14, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    osc.frequency.value = 880;
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.1);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Синхронно в обработчике tap/click — иначе iOS Safari не даст звук */
 export function unlockAudioContext() {
   playIosMediaUnlock();
@@ -58,6 +95,8 @@ export function unlockAudioContext() {
     Tone.start();
     const ctx = Tone.getContext().rawContext;
     if (ctx?.state === "suspended" && ctx.resume) void ctx.resume();
+    wireContextWatch();
+    playGesturePing();
   } catch (err) {
     console.warn("audio unlock failed", err);
   }
@@ -67,6 +106,7 @@ async function ensureContextRunning() {
   await Tone.start();
   const ctx = Tone.getContext().rawContext;
   if (ctx?.state === "suspended" && ctx.resume) await ctx.resume();
+  wireContextWatch();
   return ctx?.state === "running";
 }
 
@@ -87,89 +127,103 @@ async function createFxChain() {
   }
 }
 
-export async function startAudio() {
-  if (ready) return true;
+function markReady(fromGesture) {
+  const running = contextRunning();
+  if (isTouch()) {
+    // На iPhone «running» бывает ложным — считаем готовым только после жеста пользователя
+    ready = fromGesture && running;
+  } else {
+    ready = running;
+  }
+  return ready;
+}
+
+export async function startAudio(options = {}) {
+  const fromGesture = Boolean(options.fromGesture);
+
+  if (ready && contextRunning()) return true;
+  if (ready && !contextRunning()) ready = false;
+  if (master && !ready) disposeAudio();
+
   try {
-  masterDb = isTouch() ? -2 : -10;
-  playIosMediaUnlock();
-  if (!(await ensureContextRunning())) return false;
-
-  await createFxChain();
-
-  // Низкий гул (Vrioon-слой)
-  droneFilter = new Tone.Filter(220, "lowpass").connect(reverb);
-  drone = new Tone.FMSynth({
-    harmonicity: 1.02,
-    modulationIndex: 0.6,
-    oscillator: { type: "sine" },
-    envelope: { attack: 4, decay: 0.2, sustain: 0.55, release: 10 },
-    modulationEnvelope: { attack: 3, decay: 0, sustain: 1, release: 8 },
-  }).connect(droneFilter);
-  drone.volume.value = isTouch() ? -8 : -14;
-
-  // Длинный «сакамото»-пад
-  pad = new Tone.PolySynth(Tone.Synth, {
-    maxPolyphony: 3,
-    oscillator: { type: "sine" },
-    envelope: { attack: 2.5, decay: 1, sustain: 0.4, release: 6 },
-  }).connect(reverb);
-  pad.volume.value = isTouch() ? -12 : -18;
-
-  // Фоновый тик: тише, розовый шум, длиннее хвост — «далеко в комнате»
-  idleTick = new Tone.NoiseSynth({
-    noise: { type: "pink" },
-    envelope: { attack: 0.001, decay: 0.08, sustain: 0, release: 0.04 },
-  }).connect(reverb);
-  idleTick.volume.value = -28;
-
-  burstPool = Array.from({ length: 12 }, () => {
-    const s = new Tone.NoiseSynth({
-      noise: { type: "white" },
-      envelope: { attack: 0.001, decay: 0.028, sustain: 0, release: 0.012 },
-    }).connect(reverb);
-    s.volume.value = -14;
-    return s;
-  });
-  burstSynthNext = burstPool.map(() => 0);
-  burstTimeline = 0;
-
-  pingSynth = new Tone.Synth({
-    oscillator: { type: "triangle" },
-    envelope: { attack: 0.01, decay: 0.5, sustain: 0, release: 0.8 },
-  }).connect(reverb);
-  pingSynth.volume.value = -20;
-
-  chordSynth = new Tone.PolySynth(Tone.FMSynth, {
-    maxPolyphony: 4,
-    harmonicity: 0.5,
-    modulationIndex: 1.1,
-    oscillator: { type: "triangle" },
-    envelope: { attack: 0.9, decay: 0.4, sustain: 0.4, release: 5 },
-  }).connect(reverb);
-  chordSynth.volume.value = -16;
-
-  drone.triggerAttack("D2");
-  // Мягкий стартовый аккорд — сразу слышно, что звук живой
-  const t0 = Tone.now() + 0.05;
-  pad.triggerAttackRelease(["D3", "A3", "F4"], "2n", t0, isTouch() ? 0.45 : 0.25);
-  // Короткий «чирп» — сразу слышно на динамике телефона
-  pingSynth.triggerAttackRelease("A4", "8n", t0 + 0.08, isTouch() ? 0.35 : 0.2);
-
-  // Idle редко: раз в ~4 такта, шанс ~30%, и пауза после жеста
-  idleLoop = new Tone.Loop(time => {
-    if (muted || time < idleQuietUntil) return;
-    if (Math.random() < 0.3) {
-      idleTick.triggerAttackRelease("32n", time, 0.2 + Math.random() * 0.25);
-    } else if (Math.random() < 0.12) {
-      const note = SCALE[(Math.random() * SCALE.length) | 0];
-      pingSynth.triggerAttackRelease(note, "8n", time, 0.1);
+    masterDb = isTouch() ? -2 : -10;
+    playIosMediaUnlock();
+    if (!(await ensureContextRunning())) {
+      ready = false;
+      return false;
     }
-  }, "4m").start(0);
-  Tone.Transport.start();
 
-  const running = Tone.getContext().rawContext?.state === "running";
-  ready = running;
-  return running;
+    await createFxChain();
+
+    // Низкий гул (Vrioon-слой)
+    droneFilter = new Tone.Filter(220, "lowpass").connect(reverb);
+    drone = new Tone.FMSynth({
+      harmonicity: 1.02,
+      modulationIndex: 0.6,
+      oscillator: { type: "sine" },
+      envelope: { attack: 4, decay: 0.2, sustain: 0.55, release: 10 },
+      modulationEnvelope: { attack: 3, decay: 0, sustain: 1, release: 8 },
+    }).connect(droneFilter);
+    drone.volume.value = isTouch() ? -8 : -14;
+
+    // Длинный «сакамото»-пад
+    pad = new Tone.PolySynth(Tone.Synth, {
+      maxPolyphony: 3,
+      oscillator: { type: "sine" },
+      envelope: { attack: 2.5, decay: 1, sustain: 0.4, release: 6 },
+    }).connect(reverb);
+    pad.volume.value = isTouch() ? -12 : -18;
+
+    // Фоновый тик: тише, розовый шум, длиннее хвост — «далеко в комнате»
+    idleTick = new Tone.NoiseSynth({
+      noise: { type: "pink" },
+      envelope: { attack: 0.001, decay: 0.08, sustain: 0, release: 0.04 },
+    }).connect(reverb);
+    idleTick.volume.value = -28;
+
+    burstPool = Array.from({ length: 12 }, () => {
+      const s = new Tone.NoiseSynth({
+        noise: { type: "white" },
+        envelope: { attack: 0.001, decay: 0.028, sustain: 0, release: 0.012 },
+      }).connect(reverb);
+      s.volume.value = -14;
+      return s;
+    });
+    burstSynthNext = burstPool.map(() => 0);
+    burstTimeline = 0;
+
+    pingSynth = new Tone.Synth({
+      oscillator: { type: "triangle" },
+      envelope: { attack: 0.01, decay: 0.5, sustain: 0, release: 0.8 },
+    }).connect(reverb);
+    pingSynth.volume.value = -20;
+
+    chordSynth = new Tone.PolySynth(Tone.FMSynth, {
+      maxPolyphony: 4,
+      harmonicity: 0.5,
+      modulationIndex: 1.1,
+      oscillator: { type: "triangle" },
+      envelope: { attack: 0.9, decay: 0.4, sustain: 0.4, release: 5 },
+    }).connect(reverb);
+    chordSynth.volume.value = -16;
+
+    drone.triggerAttack("D2");
+    const t0 = Tone.now() + 0.05;
+    pad.triggerAttackRelease(["D3", "A3", "F4"], "2n", t0, isTouch() ? 0.45 : 0.25);
+    pingSynth.triggerAttackRelease("A4", "8n", t0 + 0.08, isTouch() ? 0.35 : 0.2);
+
+    idleLoop = new Tone.Loop(time => {
+      if (muted || time < idleQuietUntil) return;
+      if (Math.random() < 0.3) {
+        idleTick.triggerAttackRelease("32n", time, 0.2 + Math.random() * 0.25);
+      } else if (Math.random() < 0.12) {
+        const note = SCALE[(Math.random() * SCALE.length) | 0];
+        pingSynth.triggerAttackRelease(note, "8n", time, 0.1);
+      }
+    }, "4m").start(0);
+    Tone.Transport.start();
+
+    return markReady(fromGesture);
   } catch (err) {
     console.warn("startAudio failed", err);
     ready = false;
@@ -178,18 +232,21 @@ export async function startAudio() {
 }
 
 export function isAudioReady() {
-  return ready;
+  if (!ready) return false;
+  return contextRunning();
 }
 
-/** Повтор после Start, если контекст не поднялся */
+/** Повтор из tap: сброс и полный старт в цепочке жеста */
 export async function retryAudio() {
   unlockAudioContext();
-  return startAudio();
+  if (master) disposeAudio();
+  return startAudio({ fromGesture: true });
 }
 
 export function getAudioDebugState() {
   const ctx = Tone?.getContext?.()?.rawContext;
-  return ctx ? ctx.state : "no-tone";
+  if (!ctx) return "no-tone";
+  return ready ? ctx.state : `init·${ctx.state}`;
 }
 
 export function setMuted(value) {
@@ -202,9 +259,17 @@ export function isMuted() {
   return muted;
 }
 
+/** Короткий тестовый пинг после tap «enable sound» */
+export function nudgeAudio() {
+  if (!pingSynth || muted) return;
+  unlockAudioContext();
+  if (!isAudioReady()) return;
+  pingSynth.triggerAttackRelease("A4", "8n", Tone.now(), 0.55);
+}
+
 /** Фон: плотность слов у руки и высота ладони */
 export function updateAmbient({ nearCount = 0, handYNorm = 0.5 } = {}) {
-  if (!ready || muted) return;
+  if (!isAudioReady() || muted) return;
   const density = Math.min(1, nearCount / 8);
   droneFilter.frequency.rampTo(160 + density * 380 + (1 - handYNorm) * 100, 0.2);
   drone.volume.rampTo(-16 + density * 5, 0.25);
@@ -212,14 +277,14 @@ export function updateAmbient({ nearCount = 0, handYNorm = 0.5 } = {}) {
 
 /** Цвет слова → редкий «пинг» */
 export function pingFromHue(hue) {
-  if (!ready || muted) return;
+  if (!isAudioReady() || muted) return;
   if (Math.random() > 0.12) return;
   pingSynth.triggerAttackRelease(hueToNote(hue), "8n", Tone.now(), 0.18);
 }
 
 /** Кулак: три ноты «сложилось» */
 export function playChord(hues = []) {
-  if (!ready || muted || !hues.length) return;
+  if (!isAudioReady() || muted || !hues.length) return;
   const now = Tone.now();
   idleQuietUntil = now + 2.5;
   const notes = hues.slice(0, 3).map(h => hueToNote(h));
@@ -228,7 +293,7 @@ export function playChord(hues = []) {
 
 /** Раскрытие: россыпь ударов (как смыслы разлетаются) + reverb swell */
 export function playBurst() {
-  if (!ready || muted) return;
+  if (!isAudioReady() || muted) return;
   const now = Tone.now();
   if (lastBurstAudioAt >= 0 && now - lastBurstAudioAt < 0.42) return;
   lastBurstAudioAt = now;
@@ -252,9 +317,10 @@ export function playBurst() {
 }
 
 export function disposeAudio() {
-  if (!ready) return;
+  if (!master && !ready) return;
   idleLoop?.stop();
   idleLoop?.dispose();
+  idleLoop = null;
   Tone.Transport.stop();
   drone?.triggerRelease();
   drone?.dispose();
@@ -266,5 +332,7 @@ export function disposeAudio() {
   chordSynth?.dispose();
   reverb?.dispose();
   master?.dispose();
+  drone = droneFilter = pad = idleTick = burstPool = pingSynth = chordSynth = reverb = master = null;
+  burstSynthNext = [];
   ready = false;
 }

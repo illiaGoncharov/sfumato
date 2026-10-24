@@ -724,7 +724,7 @@ if (document.documentElement.classList.contains("touch-portrait")) {
 <script type="module">
 import { oklch, formatRgb } from "./vendor/culori.min.mjs";
 import { startHands } from "./js/hands.js?v=9";
-import { unlockAudioContext, startAudio, retryAudio, setMuted, isMuted, isAudioReady, updateAmbient, playChord, playBurst } from "./js/audio.js?v=13";
+import { unlockAudioContext, startAudio, retryAudio, nudgeAudio, setMuted, isMuted, isAudioReady, updateAmbient, playChord, playBurst } from "./js/audio.js?v=14";
 import {
   initWordsStore, loadLibraryRaw, replaceLibraryRaw, addWord, deleteWordAt,
   parseWords, isCloudEnabled, linkEmail,
@@ -1471,9 +1471,22 @@ function syncMuteButtonLabel() {
   else btnMute.textContent = isMuted() ? "sound off" : "sound";
 }
 
-function beginExperience() {
+async function enterApp(fromGesture) {
+  const el = document.getElementById("intro");
+  if (el.classList.contains("hidden")) return;
   unlockAudioContext();
-  void dismissIntro();
+  // iPhone: полный Web Audio только после второго tap (enable sound / зелёная кнопка)
+  if (!isPhoneUi()) {
+    try {
+      await startAudio({ fromGesture });
+    } catch (err) {
+      console.warn("audio start failed", err);
+    }
+  }
+  el.classList.add("hidden");
+  syncAudioGate();
+  syncMuteButtonLabel();
+  updateHud();
 }
 
 function syncAudioGate() {
@@ -1483,24 +1496,10 @@ function syncAudioGate() {
   syncMuteButtonLabel();
 }
 
-async function dismissIntro() {
-  const el = document.getElementById("intro");
-  if (el.classList.contains("hidden")) return;
-  try {
-    await startAudio();
-  } catch (err) {
-    console.warn("audio start failed", err);
-  }
-  el.classList.add("hidden");
-  syncAudioGate();
-  syncMuteButtonLabel();
-  updateHud();
-}
-
 window.addEventListener("keydown", e => {
   if (e.key === "Enter" && !document.getElementById("intro").classList.contains("hidden")) {
     e.preventDefault();
-    beginExperience();
+    void enterApp(!isPhoneUi());
     return;
   }
   if (e.key === "Escape") {
@@ -1736,17 +1735,16 @@ const chipRow = document.getElementById("chipRow");
 const wordList = document.getElementById("wordList");
 const emailLinkRow = document.getElementById("emailLinkRow");
 
-function toggleMute() {
+async function toggleMute() {
   if (!isAudioReady()) {
-    void (async () => {
-      unlockAudioContext();
-      await retryAudio();
-      syncAudioGate();
-      updateHud();
-    })();
+    unlockAudioContext();
+    await retryAudio();
+    syncAudioGate();
+    updateHud();
     return;
   }
   setMuted(!isMuted());
+  if (isPhoneUi() && !isMuted()) nudgeAudio();
   syncAudioGate();
   updateHud();
 }
@@ -1874,15 +1872,16 @@ intro.addEventListener("touchstart", () => unlockAudioContext(), { passive: true
 btnStart.addEventListener("touchstart", () => unlockAudioContext(), { passive: true });
 btnStart.addEventListener("touchend", e => {
   e.preventDefault();
-  beginExperience();
+  void enterApp(true);
 }, { passive: false });
 btnStart.addEventListener("click", e => {
   if (e.pointerType === "touch") return;
-  beginExperience();
+  void enterApp(true);
 });
 document.getElementById("audioGate").addEventListener("click", async () => {
   unlockAudioContext();
   await retryAudio();
+  nudgeAudio();
   syncAudioGate();
   updateHud();
 });
