@@ -864,6 +864,8 @@ const SCALE = 2; // для чёткого рендера шрифтов
 // -------------------------------------------------------------
 const mouse = { id: "mouse", pull: true, closed: false, x: WIDTH / 2, y: HEIGHT / 2, active: false, radius: 230, fade: 1 };
 let pointers = [mouse];
+let hands = null;
+let pointerInputBound = false;
 
 // -------------------------------------------------------------
 // Узлы (слова-пятна)
@@ -1220,7 +1222,8 @@ function setMouseFromClient(clientX, clientY) {
 }
 
 function bindPointerInput() {
-  if (hands) return;
+  if (pointerInputBound) return;
+  pointerInputBound = true;
   stage.addEventListener("pointermove", onPointerMove);
   stage.addEventListener("pointerdown", onPointerDown);
   stage.addEventListener("pointerup", onPointerUp);
@@ -1229,6 +1232,8 @@ function bindPointerInput() {
 }
 
 function unbindPointerInput() {
+  if (!pointerInputBound) return;
+  pointerInputBound = false;
   stage.removeEventListener("pointermove", onPointerMove);
   stage.removeEventListener("pointerdown", onPointerDown);
   stage.removeEventListener("pointerup", onPointerUp);
@@ -1386,7 +1391,6 @@ function blendTrail(now) {
   }
   trailCtx.putImageData(img, 0, 0);
 }
-let hands = null;
 let camStatus = "camera: press [C]";
 
 // Кадр на всю сцену: кроп cover + зеркало
