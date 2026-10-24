@@ -30,6 +30,9 @@
   html {
     height: 100%;
     -webkit-text-size-adjust: 100%;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   body {
     margin: 0;
@@ -43,7 +46,26 @@
     min-height: 100vh;
     min-height: 100dvh;
     overflow: hidden;
+    -webkit-user-select: none;
     user-select: none;
+    -webkit-touch-callout: none;
+  }
+  #stage,
+  #stage canvas,
+  #stage .top-bar,
+  #stage #hud {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #modal.open input,
+  #modal.open textarea,
+  #addPanel.open input,
+  #addPanel.open textarea {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
   }
   /* Телефон (в т.ч. «версия для компьютера»): 9:16 на весь экран */
   html.touch-portrait body {
@@ -1221,14 +1243,26 @@ function setMouseFromClient(clientX, clientY) {
   mouse.active = true;
 }
 
+function isFormFieldTarget(el) {
+  return Boolean(el?.closest?.("input, textarea, #modal.open, #addPanel.open"));
+}
+
+function blockIosTextGesture(e) {
+  if (isFormFieldTarget(e.target)) return;
+  if (e.target.closest?.("#stage, canvas")) e.preventDefault();
+}
+
 function bindPointerInput() {
   if (pointerInputBound) return;
   pointerInputBound = true;
-  stage.addEventListener("pointermove", onPointerMove);
-  stage.addEventListener("pointerdown", onPointerDown);
-  stage.addEventListener("pointerup", onPointerUp);
-  stage.addEventListener("pointercancel", onPointerUp);
-  stage.addEventListener("pointerleave", onPointerLeave);
+  stage.addEventListener("pointermove", onPointerMove, { passive: true });
+  stage.addEventListener("pointerdown", onPointerDown, { passive: false });
+  stage.addEventListener("pointerup", onPointerUp, { passive: false });
+  stage.addEventListener("pointercancel", onPointerUp, { passive: false });
+  stage.addEventListener("pointerleave", onPointerLeave, { passive: true });
+  stage.addEventListener("contextmenu", blockIosTextGesture);
+  stage.addEventListener("selectstart", blockIosTextGesture);
+  canvas.addEventListener("touchstart", blockIosTextGesture, { passive: false });
 }
 
 function unbindPointerInput() {
@@ -1239,6 +1273,9 @@ function unbindPointerInput() {
   stage.removeEventListener("pointerup", onPointerUp);
   stage.removeEventListener("pointercancel", onPointerUp);
   stage.removeEventListener("pointerleave", onPointerLeave);
+  stage.removeEventListener("contextmenu", blockIosTextGesture);
+  stage.removeEventListener("selectstart", blockIosTextGesture);
+  canvas.removeEventListener("touchstart", blockIosTextGesture);
 }
 
 function onPointerMove(e) {
@@ -1253,6 +1290,7 @@ function onPointerLeave() {
 
 function onPointerDown(e) {
   if (hands || e.button !== 0 || e.target.closest("button, #modal, #addPanel, #hud, .top-bar, #audioGate")) return;
+  e.preventDefault();
   setMouseFromClient(e.clientX, e.clientY);
   mouse.closed = true;
   mouse.pull = false;
