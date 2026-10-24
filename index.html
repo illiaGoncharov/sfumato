@@ -734,7 +734,7 @@ if (document.documentElement.classList.contains("touch-portrait")) {
 <script type="module">
 import { oklch, formatRgb } from "./vendor/culori.min.mjs";
 import { startHands } from "./js/hands.js?v=9";
-import { unlockAudioContext, startAudio, retryAudio, nudgeAudio, setMuted, isMuted, isAudioReady, updateAmbient, playChord, playBurst } from "./js/audio.js?v=15";
+import { unlockAudioContext, primeAudioGesture, startAudio, retryAudio, nudgeAudio, setMuted, isMuted, isAudioReady, updateAmbient, playChord, playBurst } from "./js/audio.js?v=16";
 import {
   initWordsStore, loadLibraryRaw, replaceLibraryRaw, addWord, deleteWordAt,
   parseWords, isCloudEnabled, linkEmail,
@@ -1498,16 +1498,13 @@ async function enterApp(fromGesture) {
   syncAudioGate();
   syncMuteButtonLabel();
   updateHud();
-  // Сначала закрываем intro; звук на телефоне — отдельным tap (enable sound)
-  if (!isPhoneUi()) {
-    try {
-      await startAudio({ fromGesture });
-    } catch (err) {
-      console.warn("audio start failed", err);
-    }
-    syncAudioGate();
-    updateHud();
+  try {
+    await startAudio({ fromGesture: fromGesture || isPhoneUi() });
+  } catch (err) {
+    console.warn("audio start failed", err);
   }
+  syncAudioGate();
+  updateHud();
 }
 
 function syncAudioGate() {
@@ -1758,7 +1755,7 @@ const emailLinkRow = document.getElementById("emailLinkRow");
 
 async function toggleMute() {
   if (!isAudioReady()) {
-    unlockAudioContext();
+    primeAudioGesture();
     await retryAudio();
     syncAudioGate();
     updateHud();
@@ -1891,13 +1888,13 @@ addDetail.addEventListener("keydown", e => {
 const btnStart = document.getElementById("btnStart");
 function onStartTap(e) {
   e.preventDefault();
-  unlockAudioContext();
+  primeAudioGesture();
   void enterApp(true);
 }
-btnStart?.addEventListener("touchstart", () => unlockAudioContext(), { passive: true });
+btnStart?.addEventListener("touchstart", () => primeAudioGesture(), { passive: true });
 btnStart?.addEventListener("click", onStartTap);
 document.getElementById("audioGate").addEventListener("click", async () => {
-  unlockAudioContext();
+  primeAudioGesture();
   await retryAudio();
   nudgeAudio();
   syncAudioGate();
