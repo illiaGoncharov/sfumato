@@ -31,6 +31,8 @@ let idleQuietUntil = 0;
 let lastBurstAudioAt = -1;
 let idleTimer = null;
 let iosUnlockEl;
+let htmlAmbience = null;
+let htmlAmbienceUrl = null;
 
 // --- Native (iOS / touch) ---
 let nativeCtx = null;
@@ -77,7 +79,7 @@ function getNativeCtx() {
 }
 
 function contextRunning() {
-  if (useNative()) return nativeCtx?.state === "running";
+  if (useNative()) return nativeCtx?.state === "running" || htmlAmbiencePlaying();
   const ctx = Tone?.getContext?.()?.rawContext;
   return ctx?.state === "running";
 }
@@ -91,6 +93,70 @@ function playIosMediaUnlock() {
     iosUnlockEl.setAttribute("playsinline", "true");
     iosUnlockEl.volume = 0.35;
     void iosUnlockEl.play().catch(() => {});
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Короткий loop-WAV — запасной путь через <audio> (Safari/Chrome iOS) */
+function buildLoopedWav(freq, sec = 2.2, sr = 22050) {
+  const samples = (sr * sec) | 0;
+  const dataSize = samples * 2;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const v = new DataView(buf);
+  const wstr = (o, s) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
+  };
+  wstr(0, "RIFF");
+  v.setUint32(4, 36 + dataSize, true);
+  wstr(8, "WAVE");
+  wstr(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true);
+  v.setUint32(28, sr * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  wstr(36, "data");
+  v.setUint32(40, dataSize, true);
+  const out = new Int16Array(buf, 44);
+  const fade = sr * 0.08;
+  for (let i = 0; i < samples; i++) {
+    const t = i / sr;
+    let env = 1;
+    if (i < fade) env = i / fade;
+    else if (i > samples - fade) env = (samples - i) / fade;
+    out[i] = Math.sin(2 * Math.PI * freq * t) * env * 11000;
+  }
+  return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+}
+
+function htmlAmbiencePlaying() {
+  return Boolean(htmlAmbience && !htmlAmbience.paused);
+}
+
+async function playHtmlAmbience() {
+  if (!useNative()) return false;
+  try {
+    htmlAmbienceUrl ??= buildLoopedWav(NOTE_FREQ.D2);
+    htmlAmbience ??= new Audio();
+    htmlAmbience.src = htmlAmbienceUrl;
+    htmlAmbience.loop = true;
+    htmlAmbience.volume = muted ? 0 : 0.5;
+    htmlAmbience.setAttribute("playsinline", "true");
+    await htmlAmbience.play();
+    return true;
+  } catch (err) {
+    console.warn("html ambience failed", err);
+    return false;
+  }
+}
+
+function stopHtmlAmbience() {
+  try {
+    htmlAmbience?.pause();
+    if (htmlAmbience) htmlAmbience.currentTime = 0;
   } catch {
     /* ignore */
   }
@@ -188,6 +254,7 @@ function startNativeIdle() {
 function disposeNative() {
   clearInterval(idleTimer);
   idleTimer = null;
+  stopHtmlAmbience();
   try {
     nativeDrone?.stop();
   } catch {
@@ -198,30 +265,30 @@ function disposeNative() {
   nativeFilter = null;
   nativeMaster = null;
   nativeGraphLive = false;
-  void nativeCtx?.close?.();
+  if (nativeCtx?.state !== "closed") void nativeCtx?.close?.();
   nativeCtx = null;
   ready = false;
 }
 
 async function startNativeAudio(fromGesture) {
   playIosMediaUnlock();
-  primeNativeGraphSync();
+  if (!nativeGraphLive) primeNativeGraphSync();
+  const htmlOk = await playHtmlAmbience();
   const ctx = getNativeCtx();
   if (!ctx) {
-    ready = false;
-    return false;
+    ready = htmlOk && fromGesture;
+    return ready;
   }
   if (ctx.state === "suspended") await ctx.resume();
-  if (ctx.state !== "running") {
-    ready = false;
-    return false;
+  const webOk = ctx.state === "running";
+  if (webOk) {
+    nativePlayTone(NOTE_FREQ.D3, 0.03, 0.9, 0.28);
+    nativePlayTone(NOTE_FREQ.A3, 0.05, 0.85, 0.22);
+    nativePlayTone(NOTE_FREQ.F4, 0.07, 0.8, 0.2);
+    nativePlayTone(NOTE_FREQ.A4, 0.1, 0.35, 0.35);
+    startNativeIdle();
   }
-  nativePlayTone(NOTE_FREQ.D3, 0.03, 0.9, 0.28);
-  nativePlayTone(NOTE_FREQ.A3, 0.05, 0.85, 0.22);
-  nativePlayTone(NOTE_FREQ.F4, 0.07, 0.8, 0.2);
-  nativePlayTone(NOTE_FREQ.A4, 0.1, 0.35, 0.35);
-  startNativeIdle();
-  ready = Boolean(fromGesture);
+  ready = fromGesture && (webOk || htmlOk);
   return ready;
 }
 
@@ -352,12 +419,16 @@ async function startAudioDesktop(fromGesture) {
 
 export async function startAudio(options = {}) {
   const fromGesture = Boolean(options.fromGesture);
+  const restart = Boolean(options.restart);
   if (ready && contextRunning()) return true;
   if (ready && !contextRunning()) ready = false;
-  disposeAudio();
+
+  // Не убивать контекст, созданный в том же tap (prime → startAudio)
+  if (restart) disposeAudio();
+  else if (!useNative() && master) disposeAudio();
 
   try {
-    unlockAudioContext();
+    if (!useNative() || restart || !nativeGraphLive) unlockAudioContext();
     if (useNative()) return startNativeAudio(fromGesture);
     return startAudioDesktop(fromGesture);
   } catch (err) {
@@ -374,8 +445,7 @@ export function isAudioReady() {
 
 export async function retryAudio() {
   unlockAudioContext();
-  disposeAudio();
-  return startAudio({ fromGesture: true });
+  return startAudio({ fromGesture: true, restart: true });
 }
 
 export function getAudioDebugState() {
@@ -387,6 +457,7 @@ export function getAudioDebugState() {
 
 export function setMuted(value) {
   muted = value;
+  if (htmlAmbience) htmlAmbience.volume = muted ? 0 : 0.5;
   if (useNative() && nativeMaster && nativeCtx) {
     nativeMaster.gain.setTargetAtTime(muted ? 0 : 0.5, nativeCtx.currentTime, 0.06);
     return;
