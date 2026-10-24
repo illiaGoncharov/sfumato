@@ -116,6 +116,7 @@
   html.touch-portrait .hud-line + .hud-line { display: none; }
   #stage {
     position: relative;
+    touch-action: none;
     aspect-ratio: 16 / 9;
     /* телефон: компактно; десктоп — см. @media ниже */
     width: min(960px, calc(100vw - 20px), calc((100vh - 20px) * 16 / 9));
@@ -318,6 +319,8 @@
     display: block;
     width: 100%;
     height: 100%;
+    object-fit: contain;
+    object-position: center;
     cursor: crosshair;
   }
   /* Верхняя плашка управления */
@@ -1174,21 +1177,81 @@ function drawConstellations(ctx, activeNodes, active) {
 // -------------------------------------------------------------
 // Мышь / события сцены
 // -------------------------------------------------------------
-const rect = () => stage.getBoundingClientRect();
 const stage = document.getElementById("stage");
 
-stage.addEventListener("mousemove", e => {
-  if (hands) return;
-  const r = rect();
-  mouse.x = (e.clientX - r.left) * (WIDTH / r.width);
-  mouse.y = (e.clientY - r.top) * (HEIGHT / r.height);
-  mouse.active = true;
-});
+/** Область кадра на экране с учётом object-fit: contain (иначе круги овалы и тап мимо) */
+function canvasDisplayRect() {
+  const box = canvas.getBoundingClientRect();
+  const aspect = WIDTH / HEIGHT;
+  const boxAspect = box.width / box.height;
+  if (boxAspect > aspect) {
+    const h = box.height;
+    const w = h * aspect;
+    return { left: box.left + (box.width - w) / 2, top: box.top, width: w, height: h };
+  }
+  const w = box.width;
+  const h = w / aspect;
+  return { left: box.left, top: box.top + (box.height - h) / 2, width: w, height: h };
+}
 
-stage.addEventListener("mouseleave", () => {
+function pointerToScene(clientX, clientY) {
+  const r = canvasDisplayRect();
+  return {
+    x: (clientX - r.left) * (WIDTH / r.width),
+    y: (clientY - r.top) * (HEIGHT / r.height),
+  };
+}
+
+function setMouseFromClient(clientX, clientY) {
+  const { x, y } = pointerToScene(clientX, clientY);
+  mouse.x = x;
+  mouse.y = y;
+  mouse.active = true;
+}
+
+function bindPointerInput() {
+  if (hands) return;
+  stage.addEventListener("pointermove", onPointerMove);
+  stage.addEventListener("pointerdown", onPointerDown);
+  stage.addEventListener("pointerup", onPointerUp);
+  stage.addEventListener("pointercancel", onPointerUp);
+  stage.addEventListener("pointerleave", onPointerLeave);
+}
+
+function unbindPointerInput() {
+  stage.removeEventListener("pointermove", onPointerMove);
+  stage.removeEventListener("pointerdown", onPointerDown);
+  stage.removeEventListener("pointerup", onPointerUp);
+  stage.removeEventListener("pointercancel", onPointerUp);
+  stage.removeEventListener("pointerleave", onPointerLeave);
+}
+
+function onPointerMove(e) {
+  if (hands) return;
+  setMouseFromClient(e.clientX, e.clientY);
+}
+
+function onPointerLeave() {
   if (hands) return;
   mouse.active = false;
-});
+}
+
+function onPointerDown(e) {
+  if (hands || e.button !== 0 || e.target.closest("button, #modal, #addPanel, #hud, .top-bar, #audioGate")) return;
+  setMouseFromClient(e.clientX, e.clientY);
+  mouse.closed = true;
+  mouse.pull = false;
+  grab(mouse, performance.now());
+}
+
+function onPointerUp() {
+  if (hands || !mouse.closed) return;
+  mouse.closed = false;
+  mouse.pull = true;
+  release(mouse, performance.now());
+}
+
+bindPointerInput();
 
 // -------------------------------------------------------------
 // Захват: открытая рука собирает слова, кулак удерживает три из них строкой,
@@ -1282,21 +1345,8 @@ function burst(x, y, held = []) {
   pulse = { x, y, t: now };
 }
 
-// Мышь: зажать = сжать кулак, отпустить = раскрыть
-stage.addEventListener("mousedown", e => {
-  if (hands || e.target.closest("button, #modal")) return;
-  mouse.closed = true;
-  mouse.pull = false;
-  grab(mouse, performance.now());
-});
-window.addEventListener("mouseup", () => {
-  if (hands || !mouse.closed) return;
-  mouse.closed = false;
-  mouse.pull = true;
-  release(mouse, performance.now());
-});
-
 function disableMouseInput() {
+  unbindPointerInput();
   if (holds.has(mouse)) release(mouse, performance.now());
   mouse.active = false;
   mouse.closed = false;
@@ -1355,6 +1405,7 @@ function stopCamera() {
   hands = null;
   disableMouseInput();
   pointers = [mouse];
+  bindPointerInput();
   btnCam.textContent = "cam [C]";
   camStatus = "camera: press [C]";
   updateHud();
@@ -1382,6 +1433,7 @@ async function startCamera() {
     video.srcObject = null;
     hands = null;
     pointers = [mouse];
+    bindPointerInput();
     if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
       camStatus = "camera blocked — lock icon → allow camera → reload";
     } else if (err?.name === "NotFoundError") {
