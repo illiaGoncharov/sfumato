@@ -28,19 +28,36 @@ let idleLoop;
 /** До этого времени idle не стучит — чтобы не наслаиваться на жест */
 let idleQuietUntil = 0;
 let lastBurstAudioAt = -1;
+/** Минимальный WAV — «разблокировка» медиа-сессии iOS до Web Audio */
+let iosUnlockEl;
 
 function hueToNote(hue) {
   const i = Math.floor(((hue % 360) / 360) * SCALE.length) % SCALE.length;
   return SCALE[i];
 }
 
+function playIosMediaUnlock() {
+  if (!isTouch()) return;
+  try {
+    iosUnlockEl ??= new Audio(
+      "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==",
+    );
+    iosUnlockEl.setAttribute("playsinline", "true");
+    iosUnlockEl.volume = 0.01;
+    void iosUnlockEl.play().catch(() => {});
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Синхронно в обработчике tap/click — иначе iOS Safari не даст звук */
 export function unlockAudioContext() {
+  playIosMediaUnlock();
   if (!Tone) return;
   try {
     Tone.start();
     const ctx = Tone.getContext().rawContext;
-    if (ctx?.state === "suspended" && ctx.resume) ctx.resume();
+    if (ctx?.state === "suspended" && ctx.resume) void ctx.resume();
   } catch (err) {
     console.warn("audio unlock failed", err);
   }
@@ -50,15 +67,17 @@ async function ensureContextRunning() {
   await Tone.start();
   const ctx = Tone.getContext().rawContext;
   if (ctx?.state === "suspended" && ctx.resume) await ctx.resume();
+  return ctx?.state === "running";
 }
 
-export async function startAudio() {
-  if (ready) return;
-  masterDb = isTouch() ? -4 : -10;
-  await ensureContextRunning();
-
+async function createFxChain() {
   master = new Tone.Volume(masterDb).toDestination();
-  reverb = new Tone.Reverb({ decay: isTouch() ? 7 : 11, wet: 0.38 }).connect(master);
+  if (isTouch()) {
+    // Reverb.generate() часто ломает/вешает iOS — лёгкий delay вместо IR
+    reverb = new Tone.FeedbackDelay({ delayTime: "4n", feedback: 0.22, wet: 0.32 }).connect(master);
+    return;
+  }
+  reverb = new Tone.Reverb({ decay: 11, wet: 0.38 }).connect(master);
   try {
     await reverb.generate();
   } catch (err) {
@@ -66,6 +85,16 @@ export async function startAudio() {
     reverb.decay = 4;
     await reverb.generate();
   }
+}
+
+export async function startAudio() {
+  if (ready) return true;
+  try {
+  masterDb = isTouch() ? -2 : -10;
+  playIosMediaUnlock();
+  if (!(await ensureContextRunning())) return false;
+
+  await createFxChain();
 
   // Низкий гул (Vrioon-слой)
   droneFilter = new Tone.Filter(220, "lowpass").connect(reverb);
@@ -138,11 +167,29 @@ export async function startAudio() {
   }, "4m").start(0);
   Tone.Transport.start();
 
-  ready = true;
+  const running = Tone.getContext().rawContext?.state === "running";
+  ready = running;
+  return running;
+  } catch (err) {
+    console.warn("startAudio failed", err);
+    ready = false;
+    return false;
+  }
 }
 
 export function isAudioReady() {
   return ready;
+}
+
+/** Повтор после Start, если контекст не поднялся */
+export async function retryAudio() {
+  unlockAudioContext();
+  return startAudio();
+}
+
+export function getAudioDebugState() {
+  const ctx = Tone?.getContext?.()?.rawContext;
+  return ctx ? ctx.state : "no-tone";
 }
 
 export function setMuted(value) {
@@ -197,9 +244,11 @@ export function playBurst() {
     synth.triggerAttackRelease("32n", t, vel);
   }
   burstTimeline = t0 + hits * 0.026 + 0.08;
-  reverb.wet.cancelScheduledValues(now);
-  reverb.wet.rampTo(0.58, 0.06);
-  reverb.wet.rampTo(0.38, 1.5);
+  if (reverb?.wet?.cancelScheduledValues) {
+    reverb.wet.cancelScheduledValues(now);
+    reverb.wet.rampTo(isTouch() ? 0.45 : 0.58, 0.06);
+    reverb.wet.rampTo(isTouch() ? 0.32 : 0.38, 1.5);
+  }
 }
 
 export function disposeAudio() {
